@@ -1,0 +1,194 @@
+export type QuestSummary = {
+  quest_id: string
+  title: string
+  status: string
+  active_anchor: string
+  branch?: string
+  head?: string
+  updated_at?: string
+  quest_root?: string
+  artifact_count?: number
+  history_count?: number
+  summary?: {
+    status_line?: string
+    latest_metric?: {
+      key?: string
+      value?: string | number
+      delta_vs_baseline?: string | number
+    }
+  }
+  pending_decisions?: string[]
+  waiting_interaction_id?: string | null
+  latest_thread_interaction_id?: string | null
+  default_reply_interaction_id?: string | null
+  runtime_status?: string
+  display_status?: string
+  pending_user_message_count?: number
+  stop_reason?: string | null
+  active_interaction_id?: string | null
+  last_artifact_interact_at?: string | null
+  last_delivered_batch_id?: string | null
+  last_delivered_at?: string | null
+}
+
+export type ConnectorSnapshot = {
+  name: string
+  display_mode?: string
+  inbox_count?: number
+  outbox_count?: number
+}
+
+export type ConfigFileEntry = {
+  name: string
+  path: string
+  required: boolean
+  exists: boolean
+}
+
+export type OpenDocumentPayload = {
+  document_id: string
+  title: string
+  path: string
+  writable: boolean
+  content: string
+  revision?: string
+  updated_at?: string
+}
+
+export type SessionPayload = {
+  ok: boolean
+  quest_id: string
+  snapshot: QuestSummary & Record<string, unknown>
+  acp_session: {
+    session_id: string
+    slash_commands?: Array<{ name: string; description: string }>
+    meta?: {
+      quest_root?: string
+      current_workspace_root?: string
+      current_workspace_branch?: string
+      research_head_branch?: string
+      latest_metric?: { key?: string; value?: string | number }
+      pending_decisions?: string[]
+      runtime_status?: string
+      stop_reason?: string | null
+      pending_user_message_count?: number
+      default_reply_interaction_id?: string | null
+      waiting_interaction_id?: string | null
+      latest_thread_interaction_id?: string | null
+      last_artifact_interact_at?: string | null
+      last_delivered_batch_id?: string | null
+    }
+  }
+}
+
+export type FeedEnvelope = {
+  cursor: number
+  acp_updates: Array<{
+    method: string
+    params: {
+      sessionId: string
+      update: Record<string, unknown>
+    }
+  }>
+}
+
+export type BashSessionStatus = 'running' | 'terminating' | 'completed' | 'failed' | 'terminated'
+
+export type BashProgress = {
+  label?: string
+  phase?: string
+  status?: string
+  detail?: string
+  current?: number
+  total?: number
+  percent?: number
+  ts?: string
+  [key: string]: unknown
+}
+
+export type BashSession = {
+  bash_id: string
+  project_id?: string
+  quest_id?: string
+  chat_session_id?: string | null
+  session_id?: string | null
+  agent_id?: string | null
+  agent_instance_id?: string | null
+  command: string
+  workdir?: string
+  log_path?: string
+  status: BashSessionStatus
+  exit_code?: number | null
+  stop_reason?: string | null
+  last_progress?: BashProgress | null
+  started_at: string
+  finished_at?: string | null
+  updated_at?: string
+}
+
+export type BashLogEntry = {
+  seq: number
+  stream: string
+  line: string
+  timestamp: string
+}
+
+export type FeedItem =
+  | {
+      id: string
+      type: 'message'
+      role: 'user' | 'assistant'
+      content: string
+      source?: string
+      createdAt?: string
+      stream?: boolean
+      runId?: string | null
+      skillId?: string | null
+    }
+  | {
+      id: string
+      type: 'artifact'
+      artifactId?: string
+      kind: string
+      content: string
+      status?: string
+      reason?: string
+      guidance?: string
+      createdAt?: string
+      paths?: Record<string, string>
+      artifactPath?: string
+      workspaceRoot?: string
+      branch?: string
+      headCommit?: string
+      flowType?: string
+      protocolStep?: string
+      ideaId?: string | null
+      campaignId?: string | null
+      sliceId?: string | null
+      details?: Record<string, unknown>
+      checkpoint?: Record<string, unknown> | null
+      attachments?: Array<Record<string, unknown>>
+    }
+  | {
+      id: string
+      type: 'operation'
+      label: 'tool_call' | 'tool_result'
+      content: string
+      toolName?: string
+      toolCallId?: string
+      status?: string
+      subject?: string | null
+      args?: string
+      output?: string
+      mcpServer?: string
+      mcpTool?: string
+      metadata?: Record<string, unknown>
+      createdAt?: string
+    }
+  | {
+      id: string
+      type: 'event'
+      label: string
+      content: string
+      createdAt?: string
+    }

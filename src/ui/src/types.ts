@@ -1,0 +1,735 @@
+export type Locale = 'en' | 'zh'
+
+export interface GuidanceRoute {
+  action: string
+  label: string
+  when: string
+  tradeoff: string
+}
+
+export interface GuidanceArtifactCall {
+  name: string
+  purpose: string
+}
+
+export interface GuidanceVm {
+  current_anchor: string
+  recommended_skill: string
+  recommended_action: string
+  summary: string
+  why_now: string
+  complete_when: string[]
+  alternative_routes?: GuidanceRoute[]
+  suggested_artifact_calls?: GuidanceArtifactCall[]
+  requires_user_decision?: boolean
+  pending_interaction_id?: string | null
+  source_artifact_kind?: string | null
+  source_artifact_id?: string | null
+  related_paths?: string[]
+  stage_status?: string | null
+}
+
+export interface QuestSummary {
+  quest_id: string
+  title: string
+  status: string
+  active_anchor: string
+  runner?: string
+  branch?: string
+  head?: string
+  created_at?: string
+  updated_at?: string
+  quest_root?: string
+  active_baseline_id?: string | null
+  active_baseline_variant_id?: string | null
+  active_run_id?: string | null
+  history_count?: number
+  artifact_count?: number
+  summary?: {
+    status_line?: string
+    latest_metric?: {
+      key?: string
+      value?: string | number
+      delta_vs_baseline?: string | number
+    }
+    latest_bash_session?: Record<string, unknown> | null
+  }
+  pending_decisions?: string[]
+  waiting_interaction_id?: string | null
+  latest_thread_interaction_id?: string | null
+  default_reply_interaction_id?: string | null
+  runtime_status?: string
+  display_status?: string
+  pending_user_message_count?: number
+  stop_reason?: string | null
+  active_interaction_id?: string | null
+  last_artifact_interact_at?: string | null
+  last_delivered_batch_id?: string | null
+  last_delivered_at?: string | null
+  counts?: {
+    memory_cards?: number
+    artifacts?: number
+    pending_decision_count?: number
+    analysis_run_count?: number
+    bash_session_count?: number
+    bash_running_count?: number
+    pending_user_message_count?: number
+  }
+  guidance?: GuidanceVm | null
+  paths?: Record<string, string | null | undefined>
+  recent_artifacts?: RecentArtifact[]
+  recent_runs?: RecentRun[]
+}
+
+export interface ConnectorSnapshot {
+  name: string
+  display_mode?: string
+  mode?: string
+  relay_url?: string | null
+  main_chat_id?: string | null
+  last_conversation_id?: string | null
+  enabled?: boolean
+  inbox_count?: number
+  outbox_count?: number
+  ignored_count?: number
+  binding_count?: number
+}
+
+export interface ConfigFileEntry {
+  name: string
+  path: string
+  required: boolean
+  exists?: boolean
+}
+
+export interface RecentArtifact {
+  kind: string
+  path: string
+  payload?: {
+    artifact_id?: string
+    run_id?: string
+    summary?: string
+    reason?: string
+    status?: string
+    updated_at?: string
+    verdict?: string
+    action?: string
+    paths?: Record<string, string>
+    guidance_vm?: GuidanceVm
+  }
+}
+
+export interface RecentRun {
+  run_id?: string
+  skill_id?: string
+  summary?: string
+  status?: string
+  created_at?: string
+  updated_at?: string
+  model?: string
+  output_path?: string
+}
+
+export interface SessionPayload {
+  ok: boolean
+  quest_id: string
+  snapshot: QuestSummary & Record<string, unknown>
+  acp_session: {
+    session_id: string
+    slash_commands?: Array<{ name: string; description: string }>
+    meta?: {
+      quest_root?: string
+      current_workspace_root?: string
+      current_workspace_branch?: string
+      research_head_branch?: string
+      latest_metric?: { key?: string; value?: string | number }
+      pending_decisions?: string[]
+      runtime_status?: string
+      stop_reason?: string | null
+      pending_user_message_count?: number
+      default_reply_interaction_id?: string | null
+      waiting_interaction_id?: string | null
+      latest_thread_interaction_id?: string | null
+      last_artifact_interact_at?: string | null
+      last_delivered_batch_id?: string | null
+    }
+  }
+}
+
+export interface QuestDocument {
+  document_id: string
+  title: string
+  kind: string
+  writable: boolean
+  path?: string
+  source_scope?: string
+}
+
+export interface OpenDocumentPayload {
+  document_id: string
+  quest_id?: string
+  title: string
+  path?: string
+  content: string
+  revision?: string
+  writable: boolean
+  kind: string
+  scope?: string
+  encoding?: string | null
+  source_scope?: string
+  updated_at?: string
+  mime_type?: string
+  size_bytes?: number
+  asset_url?: string
+  meta?: {
+    tags?: string[]
+    source_kind?: string
+    renderer_hint?: string
+    help_markdown?: string
+    system_testable?: boolean
+    structured_config?: Record<string, unknown>
+    highlight_line?: number
+    highlight_query?: string
+  }
+}
+
+export interface QuestSearchResultItem {
+  id: string
+  document_id: string
+  title: string
+  path: string
+  scope: string
+  writable: boolean
+  line_number: number
+  line_text: string
+  snippet: string
+  match_spans: Array<{ start: number; end: number }>
+  open_kind: string
+  mime_type?: string
+}
+
+export interface QuestSearchPayload {
+  quest_id: string
+  query: string
+  items: QuestSearchResultItem[]
+  limit: number
+  truncated: boolean
+  files_scanned: number
+}
+
+export interface QuestDocumentAssetUploadPayload {
+  ok: boolean
+  quest_id: string
+  document_id: string
+  asset_document_id: string
+  asset_path: string
+  relative_path: string
+  asset_url: string
+  mime_type?: string
+  kind?: string
+  saved_at?: string
+  message?: string
+}
+
+export interface ConfigValidationPayload {
+  ok: boolean
+  name?: string
+  warnings: string[]
+  errors: string[]
+}
+
+export interface ConfigTestItem {
+  name: string
+  ok: boolean
+  warnings: string[]
+  errors: string[]
+  details?: Record<string, unknown>
+}
+
+export interface ConfigTestPayload {
+  ok: boolean
+  name: string
+  summary: string
+  warnings: string[]
+  errors: string[]
+  items: ConfigTestItem[]
+}
+
+export interface MemoryCard {
+  document_id?: string
+  title?: string
+  excerpt?: string
+  type?: string
+  path?: string
+}
+
+export interface GraphPayload {
+  lines?: string[]
+  branch?: string
+  head?: string
+  svg_path?: string
+  png_path?: string
+  json_path?: string
+}
+
+export interface GitBranchArtifactSummary {
+  artifact_id?: string
+  kind?: string
+  summary?: string
+  reason?: string
+  updated_at?: string
+  status?: string
+}
+
+export interface MetricComparisonItem {
+  metric_id: string
+  label?: string
+  direction?: string
+  unit?: string | null
+  decimals?: number | null
+  chart_group?: string | null
+  run_value?: string | number | null
+  baseline_value?: string | number | null
+  delta?: number | null
+  relative_delta?: number | null
+  better?: boolean | null
+}
+
+export interface MetricContractPayload {
+  contract_id?: string
+  primary_metric_id?: string | null
+  metrics?: Array<{
+    metric_id: string
+    label?: string
+    direction?: string
+    unit?: string | null
+    decimals?: number | null
+    chart_group?: string | null
+  }>
+}
+
+export interface MainExperimentResultPayload {
+  run_id?: string
+  run_kind?: string
+  status?: string
+  summary?: string
+  verdict?: string
+  updated_at?: string
+  paths?: Record<string, string>
+  details?: Record<string, unknown>
+  metrics_summary?: Record<string, string | number>
+  metric_rows?: Array<Record<string, unknown>>
+  metric_contract?: MetricContractPayload
+  baseline_ref?: {
+    baseline_id?: string | null
+    variant_id?: string | null
+  }
+  baseline_comparisons?: {
+    primary_metric_id?: string | null
+    items?: MetricComparisonItem[]
+    summary?: Record<string, unknown>
+  }
+  progress_eval?: {
+    primary_metric_id?: string | null
+    run_value?: number | null
+    baseline_value?: number | null
+    delta_vs_baseline?: number | null
+    previous_best_value?: number | null
+    delta_vs_previous_best?: number | null
+    beats_baseline?: boolean | null
+    improved_over_previous_best?: boolean | null
+    breakthrough?: boolean
+    breakthrough_level?: string | null
+    reason?: string | null
+  }
+  files_changed?: string[]
+  evidence_paths?: string[]
+}
+
+export interface GitBranchNode {
+  ref: string
+  label: string
+  branch_kind: 'quest' | 'idea' | 'implementation' | 'analysis' | string
+  tier: 'major' | 'minor' | string
+  mode: 'ideas' | 'analysis' | string
+  parent_ref?: string | null
+  compare_base?: string | null
+  current?: boolean
+  head?: string
+  updated_at?: string
+  subject?: string
+  commit_count?: number
+  ahead?: number
+  behind?: number
+  run_id?: string
+  run_kind?: string
+  idea_id?: string
+  parent_branch_recorded?: string
+  worktree_root?: string
+  latest_metric?: {
+    key?: string
+    value?: string | number
+    delta_vs_baseline?: string | number
+  }
+  latest_summary?: string
+  latest_result?: MainExperimentResultPayload | null
+  breakthrough?: boolean
+  breakthrough_level?: string | null
+  recent_artifacts?: GitBranchArtifactSummary[]
+}
+
+export interface GitBranchEdge {
+  from: string
+  to: string
+  relation: string
+  tier?: 'major' | 'minor' | string
+  mode?: 'ideas' | 'analysis' | string
+}
+
+export interface GitBranchesPayload {
+  quest_id: string
+  default_ref: string
+  current_ref?: string
+  head?: string
+  nodes: GitBranchNode[]
+  edges: GitBranchEdge[]
+  views?: {
+    ideas?: string[]
+    analysis?: string[]
+  }
+}
+
+export interface MetricTimelinePoint {
+  seq: number
+  run_id?: string
+  artifact_id?: string
+  created_at?: string
+  branch?: string
+  idea_id?: string | null
+  value?: number | null
+  raw_value?: string | number | null
+  delta_vs_baseline?: number | null
+  relative_delta_vs_baseline?: number | null
+  breakthrough?: boolean
+  breakthrough_level?: string | null
+  result_path?: string | null
+}
+
+export interface MetricTimelineBaseline {
+  metric_id: string
+  label: string
+  baseline_id?: string | null
+  variant_id?: string | null
+  selected?: boolean
+  value?: number | null
+  raw_value?: string | number | null
+}
+
+export interface MetricTimelineSeries {
+  metric_id: string
+  label: string
+  direction?: string
+  unit?: string | null
+  decimals?: number | null
+  chart_group?: string | null
+  baselines: MetricTimelineBaseline[]
+  points: MetricTimelinePoint[]
+}
+
+export interface MetricsTimelinePayload {
+  quest_id: string
+  primary_metric_id?: string | null
+  total_runs?: number
+  baseline_ref?: {
+    baseline_id?: string | null
+    variant_id?: string | null
+  } | null
+  series: MetricTimelineSeries[]
+}
+
+export interface GitCompareCommit {
+  sha: string
+  short_sha: string
+  authored_at?: string
+  author_name?: string
+  subject: string
+}
+
+export interface GitCompareFile {
+  path: string
+  old_path?: string
+  status: 'added' | 'deleted' | 'renamed' | 'copied' | 'modified' | string
+  binary?: boolean
+  added?: number
+  removed?: number
+}
+
+export interface GitComparePayload {
+  ok: boolean
+  base: string
+  head: string
+  merge_base?: string | null
+  ahead?: number
+  behind?: number
+  commit_count?: number
+  file_count?: number
+  commits: GitCompareCommit[]
+  files: GitCompareFile[]
+}
+
+export interface GitDiffPayload {
+  ok: boolean
+  base: string
+  head: string
+  path: string
+  old_path?: string
+  status?: string
+  binary?: boolean
+  added?: number
+  removed?: number
+  lines: string[]
+  truncated?: boolean
+}
+
+export interface GitLogPayload {
+  ok: boolean
+  ref: string
+  base?: string | null
+  limit?: number
+  commits: GitCompareCommit[]
+}
+
+export interface GitCommitDetailPayload {
+  ok: boolean
+  sha: string
+  short_sha: string
+  parents: string[]
+  authored_at?: string
+  author_name?: string
+  author_email?: string
+  subject: string
+  body?: string
+  file_count?: number
+  files: GitCompareFile[]
+  stats?: {
+    added?: number
+    removed?: number
+  }
+}
+
+export interface WorkflowEntry {
+  id: string
+  kind: 'run' | 'tool_call' | 'tool_result' | 'thought' | 'artifact'
+  run_id?: string
+  skill_id?: string
+  title: string
+  summary?: string
+  tool_name?: string
+  tool_call_id?: string
+  status?: string
+  created_at?: string
+  args?: string
+  output?: string
+  reason?: string
+  paths?: string[]
+  raw_event_type?: string
+  mcp_server?: string
+  mcp_tool?: string
+  metadata?: Record<string, unknown>
+}
+
+export interface WorkflowPayload {
+  quest_id: string
+  quest_root?: string
+  entries: WorkflowEntry[]
+  changed_files: Array<{
+    path: string
+    source: string
+    document_id?: string
+    writable?: boolean
+  }>
+}
+
+export interface QuestNodeTraceAction {
+  action_id: string
+  kind?: string
+  title?: string
+  summary?: string
+  status?: string
+  created_at?: string
+  run_id?: string | null
+  skill_id?: string | null
+  branch_name?: string | null
+  stage_key?: string | null
+  worktree_rel_path?: string | null
+  tool_name?: string | null
+  tool_call_id?: string | null
+  args?: string | null
+  output?: string | null
+  reason?: string | null
+  raw_event_type?: string | null
+  paths?: string[]
+  trace_confidence?: string | null
+}
+
+export interface QuestNodeTrace {
+  selection_type: string
+  selection_ref: string
+  title: string
+  summary?: string | null
+  status?: string | null
+  branch_name?: string | null
+  stage_key?: string | null
+  stage_title?: string | null
+  worktree_rel_path?: string | null
+  updated_at?: string | null
+  counts?: Record<string, number> | null
+  run_ids?: string[] | null
+  skill_ids?: string[] | null
+  actions: QuestNodeTraceAction[]
+}
+
+export interface QuestNodeTraceListPayload {
+  quest_id: string
+  generated_at?: string | null
+  materialized_path?: string | null
+  items: QuestNodeTrace[]
+}
+
+export interface QuestNodeTraceDetailPayload {
+  quest_id: string
+  generated_at?: string | null
+  materialized_path?: string | null
+  trace: QuestNodeTrace
+}
+
+export interface ExplorerNode {
+  id: string
+  name: string
+  path: string
+  kind: 'file' | 'directory'
+  scope: string
+  writable?: boolean
+  document_id?: string
+  open_kind?: 'markdown' | 'code' | 'text' | string
+  git_status?: string
+  recently_changed?: boolean
+  updated_at?: string
+  size?: number
+  children?: ExplorerNode[]
+}
+
+export interface ExplorerSection {
+  id: string
+  title: string
+  nodes: ExplorerNode[]
+}
+
+export interface ExplorerPayload {
+  quest_id: string
+  quest_root?: string
+  view?: {
+    mode: 'live' | 'ref' | 'commit' | string
+    revision?: string | null
+    label?: string | null
+    read_only?: boolean
+  }
+  sections: ExplorerSection[]
+}
+
+export interface FeedEnvelope {
+  cursor: number
+  has_more?: boolean
+  quest_id?: string
+  format?: string
+  session_id?: string
+  acp_updates: Array<{
+    method: string
+    params: {
+      sessionId: string
+      update: Record<string, unknown>
+    }
+  }>
+}
+
+export type FeedItem =
+  | {
+      id: string
+      type: 'message'
+      role: 'user' | 'assistant'
+      source?: string
+      content: string
+      createdAt?: string
+      stream?: boolean
+      runId?: string | null
+      skillId?: string | null
+      reasoning?: boolean
+      eventType?: string | null
+      clientMessageId?: string | null
+      deliveryState?: 'sending' | 'sent' | 'delivered' | 'failed' | string | null
+    }
+  | {
+      id: string
+      type: 'artifact'
+      artifactId?: string
+      kind: string
+      status?: string
+      content: string
+      reason?: string
+      guidance?: string
+      createdAt?: string
+      paths?: Record<string, string>
+      artifactPath?: string
+      workspaceRoot?: string
+      branch?: string
+      headCommit?: string
+      flowType?: string
+      protocolStep?: string
+      ideaId?: string | null
+      campaignId?: string | null
+      sliceId?: string | null
+      details?: Record<string, unknown>
+      checkpoint?: Record<string, unknown> | null
+      attachments?: Array<Record<string, unknown>>
+      interactionId?: string | null
+      expectsReply?: boolean
+      replyMode?: string | null
+      comment?: AgentComment | null
+    }
+  | {
+      id: string
+      type: 'operation'
+      label: 'tool_call' | 'tool_result'
+      content: string
+      toolName?: string
+      toolCallId?: string
+      status?: string
+      subject?: string | null
+      args?: string
+      output?: string
+      createdAt?: string
+      mcpServer?: string
+      mcpTool?: string
+      metadata?: Record<string, unknown>
+      comment?: AgentComment | null
+      monitorPlanSeconds?: number[]
+      monitorStepIndex?: number | null
+      nextCheckAfterSeconds?: number | null
+    }
+  | {
+      id: string
+      type: 'event'
+      label: string
+      content: string
+      createdAt?: string
+    }
+
+export type AgentComment = {
+  raw?: string
+  summary?: string
+  whyNow?: string
+  next?: string
+  checkAfterSeconds?: number | null
+  checkStage?: string | null
+  risks?: string[]
+}

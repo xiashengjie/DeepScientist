@@ -1,0 +1,824 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+from ..mcp.context import McpContext
+from ..shared import append_jsonl, ensure_dir, generate_id, read_json, read_jsonl, utc_now
+
+BASH_STATUS_MARKER_PREFIX = "__DS_BASH_STATUS__"
+BASH_CARRIAGE_RETURN_PREFIX = "__DS_BASH_CR__"
+BASH_PROGRESS_PREFIX = "__DS_PROGRESS__"
+BASH_TERMINAL_PROMPT_PREFIX = "__DS_TERMINAL_PROMPT__"
+DEFAULT_LOG_TAIL_LIMIT = 200
+DEFAULT_POLL_INTERVAL_SECONDS = 0.35
+TERMINAL_STATUSES = {"completed", "failed", "terminated"}
+DEFAULT_TERMINAL_SESSION_ID = "terminal-main"
+INPUT_ESCAPE_SEQUENCE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-_]")
+
+
+def _atomic_write_json(path: Path, payload: Any) -> None:
+    ensure_dir(path.parent)
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    temp_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=False) + "\n",
+        encoding="utf-8",
+    )
+    temp_path.replace(path)
+
+
+def _normalize_string(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _coerce_session_status(value: object) -> str:
+    normalized = _normalize_string(value).lower()
+    if normalized in TERMINAL_STATUSES | {"running", "terminating"}:
+        return normalized
+    return "failed"
+
+
+def _session_sort_key(session: dict[str, Any]) -> tuple[str, str]:
+    return (
+        str(session.get("started_at") or ""),
+        str(session.get("updated_at") or ""),
+    )
+
+
+def _is_process_alive(pid: object) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _parse_progress_marker(line: str) -> dict[str, Any] | None:
+    if not line.startswith(BASH_PROGRESS_PREFIX):
+        return None
+    raw = line[len(BASH_PROGRESS_PREFIX) :].strip()
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+class BashExecService:
+    def __init__(self, home: Path) -> None:
+        self.home = home
+
+    def _quest_root(self, quest_id: str) -> Path:
+        return self.home / "quests" / quest_id
+
+    def sessions_root(self, quest_root: Path) -> Path:
+        return ensure_dir(quest_root / ".ds" / "bash_exec")
+
+    def index_path(self, quest_root: Path) -> Path:
+        return self.sessions_root(quest_root) / "index.jsonl"
+
+    def session_dir(self, quest_root: Path, bash_id: str) -> Path:
+        return self.sessions_root(quest_root) / bash_id
+
+    def meta_path(self, quest_root: Path, bash_id: str) -> Path:
+        return self.session_dir(quest_root, bash_id) / "meta.json"
+
+    def log_path(self, quest_root: Path, bash_id: str) -> Path:
+        return self.session_dir(quest_root, bash_id) / "log.jsonl"
+
+    def terminal_log_path(self, quest_root: Path, bash_id: str) -> Path:
+        return self.session_dir(quest_root, bash_id) / "terminal.log"
+
+    def progress_path(self, quest_root: Path, bash_id: str) -> Path:
+        return self.session_dir(quest_root, bash_id) / "progress.json"
+
+    def input_path(self, quest_root: Path, bash_id: str) -> Path:
+        return self.session_dir(quest_root, bash_id) / "input.jsonl"
+
+    def input_cursor_path(self, quest_root: Path, bash_id: str) -> Path:
+        return self.session_dir(quest_root, bash_id) / "input.cursor.json"
+
+    def history_path(self, quest_root: Path, bash_id: str) -> Path:
+        return self.session_dir(quest_root, bash_id) / "history.jsonl"
+
+    def line_buffer_path(self, quest_root: Path, bash_id: str) -> Path:
+        return self.session_dir(quest_root, bash_id) / "line_buffer.json"
+
+    def monitor_log_path(self, quest_root: Path, bash_id: str) -> Path:
+        return self.session_dir(quest_root, bash_id) / "monitor.log"
+
+    def stop_request_path(self, quest_root: Path, bash_id: str) -> Path:
+        return self.session_dir(quest_root, bash_id) / "stop_request.json"
+
+    def _allowed_roots(self, context: McpContext) -> list[Path]:
+        roots: list[Path] = []
+        quest_root = context.require_quest_root().resolve()
+        roots.append(quest_root)
+        if context.worktree_root is not None:
+            worktree_root = context.worktree_root.resolve()
+            if worktree_root not in roots:
+                roots.append(worktree_root)
+        return roots
+
+    def resolve_workdir(self, context: McpContext, workdir: str | None) -> tuple[Path, str]:
+        roots = self._allowed_roots(context)
+        quest_root = context.require_quest_root().resolve()
+        requested = _normalize_string(workdir)
+        if not requested and context.worktree_root is not None:
+            cwd = context.worktree_root.resolve()
+        elif not requested:
+            cwd = quest_root
+        else:
+            candidate = Path(requested).expanduser()
+            if candidate.is_absolute():
+                cwd = candidate.resolve()
+            else:
+                base = context.worktree_root.resolve() if context.worktree_root is not None else quest_root
+                cwd = (base / candidate).resolve()
+        if not any(cwd == root or root in cwd.parents for root in roots):
+            raise ValueError("workdir_outside_quest")
+        if not cwd.exists() or not cwd.is_dir():
+            raise ValueError("workdir_not_found")
+        try:
+            display = cwd.relative_to(quest_root).as_posix()
+        except ValueError:
+            display = str(cwd)
+        return cwd, "" if display == "." else display
+
+    def _export_log(
+        self,
+        *,
+        quest_root: Path,
+        cwd: Path,
+        bash_id: str,
+        export_log: bool,
+        export_log_to: str | None,
+    ) -> dict[str, Any]:
+        target = _normalize_string(export_log_to)
+        if not target and not export_log:
+            return {}
+        if not target:
+            target = f"artifacts/runs/{bash_id}/bash.log"
+        destination = Path(target).expanduser()
+        if destination.is_absolute():
+            resolved = destination.resolve()
+        else:
+            resolved = (cwd / destination).resolve()
+        quest_root_resolved = quest_root.resolve()
+        if resolved != quest_root_resolved and quest_root_resolved not in resolved.parents:
+            raise ValueError("export_log_outside_quest")
+        if resolved.exists() and resolved.is_symlink():
+            raise ValueError("export_log_symlink_denied")
+        source = self.terminal_log_path(quest_root, bash_id)
+        ensure_dir(resolved.parent)
+        shutil.copy2(source, resolved)
+        return {
+            "exported_log_path": str(resolved.relative_to(quest_root_resolved)),
+        }
+
+    def _session_log_relative_path(self, quest_root: Path, bash_id: str) -> str:
+        return str(self.terminal_log_path(quest_root, bash_id).relative_to(quest_root))
+
+    def _session_payload(self, quest_root: Path, meta: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(meta)
+        payload["project_id"] = payload.get("project_id") or payload.get("quest_id")
+        payload["chat_session_id"] = payload.get("chat_session_id") or payload.get("session_id")
+        payload["log_path"] = payload.get("log_path") or self._session_log_relative_path(quest_root, str(payload.get("bash_id") or ""))
+        payload["status"] = _coerce_session_status(payload.get("status"))
+        payload["last_progress"] = payload.get("last_progress") or read_json(self.progress_path(quest_root, str(payload.get("bash_id") or "")), None)
+        payload["kind"] = str(payload.get("kind") or "exec")
+        return payload
+
+    def reconcile_session(self, quest_root: Path, bash_id: str) -> dict[str, Any]:
+        meta_path = self.meta_path(quest_root, bash_id)
+        meta = read_json(meta_path, {})
+        if not meta:
+            raise FileNotFoundError(f"Unknown bash session `{bash_id}`.")
+        status = _coerce_session_status(meta.get("status"))
+        if status in TERMINAL_STATUSES:
+            return self._session_payload(quest_root, meta)
+        monitor_pid = meta.get("monitor_pid")
+        process_pid = meta.get("process_pid")
+        if _is_process_alive(process_pid) or _is_process_alive(monitor_pid):
+            return self._session_payload(quest_root, meta)
+        stop_reason = _normalize_string(meta.get("stop_reason"))
+        meta["status"] = "terminated" if stop_reason else "failed"
+        meta.setdefault("finished_at", utc_now())
+        meta["updated_at"] = utc_now()
+        _atomic_write_json(meta_path, meta)
+        return self._session_payload(quest_root, meta)
+
+    def get_session(self, quest_root: Path, bash_id: str) -> dict[str, Any]:
+        return self.reconcile_session(quest_root, bash_id)
+
+    def _list_session_ids(self, quest_root: Path) -> list[str]:
+        root = self.sessions_root(quest_root)
+        ids: list[str] = []
+        for meta_path in root.glob("*/meta.json"):
+            ids.append(meta_path.parent.name)
+        return sorted(ids)
+
+    def list_sessions(
+        self,
+        quest_root: Path,
+        *,
+        status: str | None = None,
+        kind: str | None = None,
+        agent_instance_ids: list[str] | None = None,
+        agent_ids: list[str] | None = None,
+        chat_session_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        normalized_status = _normalize_string(status).lower()
+        normalized_kind = _normalize_string(kind).lower()
+        normalized_agent_instance_ids = {item for item in (agent_instance_ids or []) if item}
+        normalized_agent_ids = {item for item in (agent_ids or []) if item}
+        normalized_chat_session = _normalize_string(chat_session_id)
+        sessions: list[dict[str, Any]] = []
+        for bash_id in self._list_session_ids(quest_root):
+            try:
+                session = self.reconcile_session(quest_root, bash_id)
+            except FileNotFoundError:
+                continue
+            session_status = _normalize_string(session.get("status")).lower()
+            if normalized_status and session_status != normalized_status:
+                continue
+            if normalized_kind and _normalize_string(session.get("kind")).lower() != normalized_kind:
+                continue
+            if normalized_agent_instance_ids and str(session.get("agent_instance_id") or "") not in normalized_agent_instance_ids:
+                continue
+            if normalized_agent_ids and str(session.get("agent_id") or "") not in normalized_agent_ids:
+                continue
+            if normalized_chat_session and str(session.get("chat_session_id") or "") != normalized_chat_session:
+                continue
+            sessions.append(session)
+        sessions.sort(key=_session_sort_key, reverse=True)
+        return sessions[: max(1, limit)]
+
+    def resolve_session_id(self, quest_root: Path, session_ref: str | None = None) -> str:
+        normalized = _normalize_string(session_ref)
+        if normalized:
+            if self.meta_path(quest_root, normalized).exists():
+                return normalized
+            raise FileNotFoundError(f"Unknown bash session `{normalized}`.")
+        sessions = self.list_sessions(quest_root, limit=1)
+        if not sessions:
+            raise FileNotFoundError("No bash session found.")
+        return str(sessions[0]["bash_id"])
+
+    def read_terminal_log(self, quest_root: Path, bash_id: str) -> str:
+        path = self.terminal_log_path(quest_root, bash_id)
+        if not path.exists():
+            return ""
+        return path.read_text(encoding="utf-8", errors="replace")
+
+    def read_log_entries(
+        self,
+        quest_root: Path,
+        bash_id: str,
+        *,
+        limit: int = DEFAULT_LOG_TAIL_LIMIT,
+        before_seq: int | None = None,
+        order: str = "asc",
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        if not self.meta_path(quest_root, bash_id).exists():
+            raise FileNotFoundError(f"Unknown bash session `{bash_id}`.")
+        entries = read_jsonl(self.log_path(quest_root, bash_id))
+        normalized_before = before_seq if isinstance(before_seq, int) and before_seq > 0 else None
+        if normalized_before is not None:
+            entries = [entry for entry in entries if int(entry.get("seq") or 0) < normalized_before]
+        latest_seq = int(entries[-1].get("seq") or 0) if entries else 0
+        normalized_limit = max(1, limit)
+        truncated = len(entries) > normalized_limit
+        selected = entries[-normalized_limit:]
+        if order == "desc":
+            selected = list(reversed(selected))
+        tail_start_seq = int(selected[0].get("seq") or 0) if selected else None
+        meta = {
+            "tail_limit": normalized_limit,
+            "tail_start_seq": tail_start_seq if truncated else tail_start_seq,
+            "latest_seq": latest_seq or None,
+        }
+        return selected, meta
+
+    def wait_for_session(
+        self,
+        quest_root: Path,
+        bash_id: str,
+        *,
+        poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
+        timeout_seconds: int | None = None,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout_seconds if timeout_seconds and timeout_seconds > 0 else None
+        while True:
+            session = self.get_session(quest_root, bash_id)
+            if _normalize_string(session.get("status")).lower() in TERMINAL_STATUSES:
+                return session
+            if deadline is not None and time.monotonic() >= deadline:
+                return session
+            time.sleep(max(0.1, poll_interval))
+
+    def request_stop(self, quest_root: Path, bash_id: str, *, reason: str | None = None, user_id: str | None = None) -> dict[str, Any]:
+        session = self.get_session(quest_root, bash_id)
+        status = _normalize_string(session.get("status")).lower()
+        if status in TERMINAL_STATUSES:
+            return session
+        request_payload = {
+            "reason": _normalize_string(reason) or "user_stop",
+            "user_id": _normalize_string(user_id) or _normalize_string(session.get("agent_id")) or "agent",
+            "requested_at": utc_now(),
+        }
+        _atomic_write_json(self.stop_request_path(quest_root, bash_id), request_payload)
+        meta = read_json(self.meta_path(quest_root, bash_id), {})
+        meta["status"] = "terminating"
+        meta["stop_reason"] = request_payload["reason"]
+        meta["stopped_by_user_id"] = request_payload["user_id"]
+        meta["updated_at"] = utc_now()
+        _atomic_write_json(self.meta_path(quest_root, bash_id), meta)
+        monitor_pid = meta.get("monitor_pid")
+        process_group_id = meta.get("process_group_id")
+        if not _is_process_alive(monitor_pid) and isinstance(process_group_id, int) and process_group_id > 0:
+            try:
+                os.killpg(process_group_id, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        return self._session_payload(quest_root, meta)
+
+    def _build_initial_meta(
+        self,
+        *,
+        context: McpContext,
+        bash_id: str,
+        command: str,
+        mode: str,
+        cwd: Path,
+        workdir_display: str,
+        timeout_seconds: int | None,
+        env_keys: list[str],
+        kind: str = "exec",
+    ) -> dict[str, Any]:
+        quest_root = context.require_quest_root().resolve()
+        session_id = _normalize_string(context.conversation_id) or f"quest:{context.quest_id or quest_root.name}"
+        agent_id = _normalize_string(context.agent_role) or "pi"
+        agent_instance_id = _normalize_string(context.worker_id) or _normalize_string(context.run_id) or session_id
+        started_by_user_id = f"agent:{agent_id}"
+        timestamp = utc_now()
+        return {
+            "id": bash_id,
+            "bash_id": bash_id,
+            "quest_id": context.quest_id or quest_root.name,
+            "project_id": context.quest_id or quest_root.name,
+            "session_id": session_id,
+            "chat_session_id": session_id,
+            "task_id": _normalize_string(context.run_id) or session_id,
+            "cli_server_id": "deepscientist-local",
+            "agent_id": agent_id,
+            "agent_instance_id": agent_instance_id,
+            "started_by_user_id": started_by_user_id,
+            "stopped_by_user_id": None,
+            "command": command,
+            "workdir": workdir_display,
+            "cwd": str(cwd),
+            "kind": kind,
+            "log_path": self._session_log_relative_path(quest_root, bash_id),
+            "mode": mode,
+            "status": "running",
+            "exit_code": None,
+            "stop_reason": None,
+            "last_progress": None,
+            "started_at": timestamp,
+            "finished_at": None,
+            "updated_at": timestamp,
+            "latest_seq": 0,
+            "timeout_seconds": timeout_seconds,
+            "env_keys": env_keys,
+            "quest_root": str(quest_root),
+            "monitor_pid": None,
+            "process_pid": None,
+            "process_group_id": None,
+        }
+
+    def _start_monitor_process(
+        self,
+        *,
+        quest_root: Path,
+        bash_id: str,
+        env_payload: dict[str, str] | None = None,
+    ) -> int:
+        monitor_env = os.environ.copy()
+        if env_payload:
+            monitor_env["DS_BASH_EXEC_TOOL_ENV"] = json.dumps(env_payload, ensure_ascii=False)
+        monitor_log_handle = self.monitor_log_path(quest_root, bash_id).open("a", encoding="utf-8")
+        try:
+            monitor_process = subprocess.Popen(
+                [sys.executable, "-m", "deepscientist.bash_exec.monitor", str(self.session_dir(quest_root, bash_id))],
+                stdin=subprocess.DEVNULL,
+                stdout=monitor_log_handle,
+                stderr=monitor_log_handle,
+                cwd=str(quest_root),
+                env=monitor_env,
+                start_new_session=True,
+            )
+        finally:
+            monitor_log_handle.close()
+        return monitor_process.pid
+
+    def start_session(
+        self,
+        context: McpContext,
+        *,
+        command: str,
+        mode: str,
+        workdir: str | None = None,
+        env: dict[str, Any] | None = None,
+        timeout_seconds: int | None = None,
+    ) -> dict[str, Any]:
+        if not _normalize_string(command):
+            raise ValueError("command_required")
+        quest_root = context.require_quest_root().resolve()
+        cwd, workdir_display = self.resolve_workdir(context, workdir)
+        bash_id = generate_id("bash")
+        session_dir = self.session_dir(quest_root, bash_id)
+        ensure_dir(session_dir)
+        env_payload = {str(key): str(value) for key, value in (env or {}).items() if value is not None}
+        meta = self._build_initial_meta(
+            context=context,
+            bash_id=bash_id,
+            command=command,
+            mode=mode,
+            cwd=cwd,
+            workdir_display=workdir_display,
+            timeout_seconds=timeout_seconds,
+            env_keys=sorted(env_payload),
+            kind="exec",
+        )
+        self.terminal_log_path(quest_root, bash_id).touch()
+        self.log_path(quest_root, bash_id).touch()
+        _atomic_write_json(self.meta_path(quest_root, bash_id), meta)
+        append_jsonl(
+            self.index_path(quest_root),
+            {
+                "event": "created",
+                "bash_id": bash_id,
+                "quest_id": meta["quest_id"],
+                "command": command,
+                "workdir": workdir_display,
+                "mode": mode,
+                "started_at": meta["started_at"],
+            },
+        )
+        meta["monitor_pid"] = self._start_monitor_process(
+            quest_root=quest_root,
+            bash_id=bash_id,
+            env_payload=env_payload,
+        )
+        meta["updated_at"] = utc_now()
+        _atomic_write_json(self.meta_path(quest_root, bash_id), meta)
+        return self._session_payload(quest_root, meta)
+
+    def _build_terminal_meta(
+        self,
+        *,
+        quest_root: Path,
+        quest_id: str,
+        bash_id: str,
+        cwd: Path,
+        workdir_display: str,
+        command: str,
+        source: str,
+        conversation_id: str | None,
+        user_id: str | None,
+        env_keys: list[str],
+    ) -> dict[str, Any]:
+        timestamp = utc_now()
+        session_id = _normalize_string(conversation_id) or f"quest:{quest_id}:terminal"
+        started_by_user_id = _normalize_string(user_id) or f"user:{source or 'web'}"
+        return {
+            "id": bash_id,
+            "bash_id": bash_id,
+            "quest_id": quest_id,
+            "project_id": quest_id,
+            "session_id": session_id,
+            "chat_session_id": session_id,
+            "task_id": bash_id,
+            "cli_server_id": "deepscientist-local",
+            "agent_id": "user",
+            "agent_instance_id": None,
+            "started_by_user_id": started_by_user_id,
+            "stopped_by_user_id": None,
+            "command": command,
+            "workdir": workdir_display,
+            "cwd": str(cwd),
+            "kind": "terminal",
+            "source": {"surface": source, "conversation_id": _normalize_string(conversation_id) or None},
+            "log_path": self._session_log_relative_path(quest_root, bash_id),
+            "mode": "detach",
+            "status": "running",
+            "exit_code": None,
+            "stop_reason": None,
+            "last_progress": None,
+            "started_at": timestamp,
+            "finished_at": None,
+            "updated_at": timestamp,
+            "latest_seq": 0,
+            "timeout_seconds": None,
+            "env_keys": env_keys,
+            "quest_root": str(quest_root),
+            "monitor_pid": None,
+            "process_pid": None,
+            "process_group_id": None,
+            "last_input_at": None,
+            "last_prompt_at": None,
+            "last_command": None,
+            "history_count": len(read_jsonl(self.history_path(quest_root, bash_id))),
+        }
+
+    def ensure_terminal_session(
+        self,
+        quest_root: Path,
+        *,
+        quest_id: str | None = None,
+        bash_id: str = DEFAULT_TERMINAL_SESSION_ID,
+        cwd: Path | None = None,
+        source: str = "web",
+        conversation_id: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        resolved_quest_root = quest_root.resolve()
+        resolved_quest_id = _normalize_string(quest_id) or resolved_quest_root.name
+        try:
+            session = self.reconcile_session(resolved_quest_root, bash_id)
+            if _normalize_string(session.get("kind")).lower() == "terminal" and _normalize_string(session.get("status")).lower() not in TERMINAL_STATUSES:
+                return session
+        except FileNotFoundError:
+            session = None
+
+        previous_meta = read_json(self.meta_path(resolved_quest_root, bash_id), {}) if self.meta_path(resolved_quest_root, bash_id).exists() else {}
+        previous_cwd = Path(str(previous_meta.get("cwd") or "")).expanduser().resolve() if previous_meta.get("cwd") else None
+        target_cwd = (cwd or previous_cwd or resolved_quest_root).resolve()
+        if not target_cwd.exists() or not target_cwd.is_dir() or not (target_cwd == resolved_quest_root or resolved_quest_root in target_cwd.parents):
+            target_cwd = resolved_quest_root
+        try:
+            workdir_display = target_cwd.relative_to(resolved_quest_root).as_posix()
+        except ValueError:
+            workdir_display = str(target_cwd)
+        workdir_display = "" if workdir_display == "." else workdir_display
+
+        session_dir = self.session_dir(resolved_quest_root, bash_id)
+        ensure_dir(session_dir)
+        self.terminal_log_path(resolved_quest_root, bash_id).touch()
+        self.log_path(resolved_quest_root, bash_id).touch()
+        self.input_path(resolved_quest_root, bash_id).touch()
+        self.history_path(resolved_quest_root, bash_id).touch()
+        _atomic_write_json(
+            self.input_cursor_path(resolved_quest_root, bash_id),
+            {"offset": len(read_jsonl(self.input_path(resolved_quest_root, bash_id))), "updated_at": utc_now()},
+        )
+        _atomic_write_json(
+            self.line_buffer_path(resolved_quest_root, bash_id),
+            {"buffer": "", "updated_at": utc_now()},
+        )
+        stop_request = self.stop_request_path(resolved_quest_root, bash_id)
+        if stop_request.exists():
+            stop_request.unlink()
+
+        env_payload = {
+            "TERM": "xterm-256color",
+            "COLORTERM": "truecolor",
+            "PS1": "",
+            "PS2": "",
+            "PROMPT_COMMAND": (
+                'printf "__DS_TERMINAL_PROMPT__ cwd=%q ts=%s\\n" "$PWD" "$(date -u +%FT%TZ)"'
+            ),
+        }
+        command = "exec bash --noprofile --norc -i"
+        meta = self._build_terminal_meta(
+            quest_root=resolved_quest_root,
+            quest_id=resolved_quest_id,
+            bash_id=bash_id,
+            cwd=target_cwd,
+            workdir_display=workdir_display,
+            command=command,
+            source=source,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            env_keys=sorted(env_payload),
+        )
+        _atomic_write_json(self.meta_path(resolved_quest_root, bash_id), meta)
+        append_jsonl(
+            self.index_path(resolved_quest_root),
+            {
+                "event": "terminal_ensured",
+                "bash_id": bash_id,
+                "quest_id": resolved_quest_id,
+                "workdir": workdir_display,
+                "source": source,
+                "started_at": meta["started_at"],
+            },
+        )
+        meta["monitor_pid"] = self._start_monitor_process(
+            quest_root=resolved_quest_root,
+            bash_id=bash_id,
+            env_payload=env_payload,
+        )
+        meta["updated_at"] = utc_now()
+        _atomic_write_json(self.meta_path(resolved_quest_root, bash_id), meta)
+        return self._session_payload(resolved_quest_root, meta)
+
+    def _update_terminal_line_buffer(
+        self,
+        quest_root: Path,
+        bash_id: str,
+        *,
+        data: str,
+        source: str,
+        user_id: str | None,
+        conversation_id: str | None,
+    ) -> list[dict[str, Any]]:
+        path = self.line_buffer_path(quest_root, bash_id)
+        payload = read_json(path, {}) or {}
+        buffer = str(payload.get("buffer") or "")
+        sanitized = INPUT_ESCAPE_SEQUENCE_RE.sub("", data.replace("\r\n", "\n"))
+        completed: list[dict[str, Any]] = []
+        for char in sanitized:
+            if char in {"\r", "\n"}:
+                command = buffer.strip()
+                if command:
+                    entry = {
+                        "command_id": generate_id("cmd"),
+                        "command": command,
+                        "source": source,
+                        "user_id": _normalize_string(user_id) or None,
+                        "conversation_id": _normalize_string(conversation_id) or None,
+                        "submitted_at": utc_now(),
+                    }
+                    completed.append(entry)
+                buffer = ""
+                continue
+            if char in {"\b", "\x7f"}:
+                buffer = buffer[:-1]
+                continue
+            if ord(char) < 32 and char not in {"\t"}:
+                continue
+            buffer += char
+        _atomic_write_json(path, {"buffer": buffer, "updated_at": utc_now()})
+        return completed
+
+    def append_terminal_input(
+        self,
+        quest_root: Path,
+        bash_id: str,
+        *,
+        data: str,
+        source: str = "web",
+        user_id: str | None = None,
+        conversation_id: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_data = str(data or "")
+        if not normalized_data:
+            raise ValueError("terminal_input_required")
+        session = self.reconcile_session(quest_root, bash_id)
+        if _normalize_string(session.get("kind")).lower() != "terminal":
+            raise ValueError("not_terminal_session")
+        status = _normalize_string(session.get("status")).lower()
+        if status in TERMINAL_STATUSES:
+            raise ValueError("terminal_session_inactive")
+
+        entry = {
+            "input_id": generate_id("tin"),
+            "data": normalized_data,
+            "source": source,
+            "user_id": _normalize_string(user_id) or None,
+            "conversation_id": _normalize_string(conversation_id) or None,
+            "submitted_at": utc_now(),
+        }
+        append_jsonl(self.input_path(quest_root, bash_id), entry)
+        completed = self._update_terminal_line_buffer(
+            quest_root,
+            bash_id,
+            data=normalized_data,
+            source=source,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+        if completed:
+            for item in completed:
+                append_jsonl(self.history_path(quest_root, bash_id), item)
+            meta = read_json(self.meta_path(quest_root, bash_id), {})
+            meta["last_command"] = completed[-1]["command"]
+            meta["history_count"] = len(read_jsonl(self.history_path(quest_root, bash_id)))
+            meta["updated_at"] = utc_now()
+            meta["last_input_at"] = utc_now()
+            _atomic_write_json(self.meta_path(quest_root, bash_id), meta)
+        else:
+            meta = read_json(self.meta_path(quest_root, bash_id), {})
+            meta["updated_at"] = utc_now()
+            meta["last_input_at"] = utc_now()
+            _atomic_write_json(self.meta_path(quest_root, bash_id), meta)
+        return {
+            "ok": True,
+            "session": self._session_payload(quest_root, read_json(self.meta_path(quest_root, bash_id), {})),
+            "accepted_input": entry,
+            "completed_commands": completed,
+        }
+
+    def terminal_restore_payload(
+        self,
+        quest_root: Path,
+        bash_id: str = DEFAULT_TERMINAL_SESSION_ID,
+        *,
+        command_limit: int = 10,
+        output_limit: int = 80,
+    ) -> dict[str, Any]:
+        session = self.reconcile_session(quest_root, bash_id)
+        entries, meta = self.read_log_entries(
+            quest_root,
+            bash_id,
+            limit=max(1, output_limit),
+            before_seq=None,
+            order="asc",
+        )
+        history = read_jsonl(self.history_path(quest_root, bash_id))
+        latest_commands = [
+            {
+                "command_id": item.get("command_id"),
+                "command": item.get("command"),
+                "source": item.get("source"),
+                "submitted_at": item.get("submitted_at"),
+            }
+            for item in history[-max(1, command_limit):]
+        ]
+        tail = [
+            {
+                "seq": entry.get("seq"),
+                "stream": entry.get("stream"),
+                "line": entry.get("line"),
+                "timestamp": entry.get("timestamp"),
+            }
+            for entry in entries
+        ]
+        return {
+            "ok": True,
+            "session_id": bash_id,
+            "status": session.get("status"),
+            "cwd": session.get("cwd"),
+            "latest_commands": latest_commands,
+            "tail": tail,
+            "latest_seq": meta.get("latest_seq"),
+            "tail_start_seq": meta.get("tail_start_seq"),
+            "session": session,
+        }
+
+    def build_tool_result(
+        self,
+        context: McpContext,
+        *,
+        session: dict[str, Any],
+        include_log: bool = False,
+        export_log: bool = False,
+        export_log_to: str | None = None,
+    ) -> dict[str, Any]:
+        quest_root = context.require_quest_root().resolve()
+        result = {
+            "id": session["bash_id"],
+            "bash_id": session["bash_id"],
+            "log_path": session.get("log_path"),
+            "status": session.get("status"),
+            "command": session.get("command"),
+            "workdir": session.get("workdir"),
+            "started_at": session.get("started_at"),
+            "finished_at": session.get("finished_at"),
+            "exit_code": session.get("exit_code"),
+            "stop_reason": session.get("stop_reason"),
+            "last_progress": session.get("last_progress"),
+        }
+        if include_log:
+            result["log"] = self.read_terminal_log(quest_root, str(session["bash_id"]))
+        if export_log or _normalize_string(export_log_to):
+            cwd, _ = self.resolve_workdir(context, str(session.get("workdir") or ""))
+            result.update(
+                self._export_log(
+                    quest_root=quest_root,
+                    cwd=cwd,
+                    bash_id=str(session["bash_id"]),
+                    export_log=export_log,
+                    export_log_to=export_log_to,
+                )
+            )
+        return result

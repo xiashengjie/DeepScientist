@@ -8,6 +8,7 @@ from pathlib import Path
 class RunRequest:
     quest_id: str
     quest_root: Path
+    worktree_root: Path | None
     run_id: str
     skill_id: str
     message: str

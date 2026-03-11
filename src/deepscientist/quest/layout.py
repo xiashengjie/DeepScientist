@@ -29,6 +29,7 @@ QUEST_DIRECTORIES = (
     "paper",
     ".codex/skills",
     ".claude/agents",
+    ".ds/bash_exec",
     ".ds/conversations",
     ".ds/codex_history",
     ".ds/runs",
@@ -36,11 +37,11 @@ QUEST_DIRECTORIES = (
 )
 
 
-def initial_quest_yaml(quest_id: str, goal: str, quest_root: Path, runner: str) -> dict:
+def initial_quest_yaml(quest_id: str, goal: str, quest_root: Path, runner: str, title: str | None = None) -> dict:
     timestamp = utc_now()
     return {
         "quest_id": quest_id,
-        "title": goal,
+        "title": title or goal,
         "quest_root": str(quest_root.resolve()),
         "status": "active",
         "active_anchor": "baseline",

@@ -1,0 +1,245 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from deepscientist.config import ConfigManager
+from deepscientist.daemon import DaemonApp
+from deepscientist.home import ensure_home_layout, repo_root
+from deepscientist.quest import QuestService
+from deepscientist.shared import append_jsonl
+from deepscientist.skills import SkillInstaller
+
+
+def test_acp_session_descriptor_exposes_quest_root_and_commands(temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    ConfigManager(temp_home).ensure_files()
+    quest = QuestService(temp_home, skill_installer=SkillInstaller(repo_root(), temp_home)).create("acp quest")
+    quest_id = quest["quest_id"]
+    app = DaemonApp(temp_home)
+
+    payload = app.handlers.quest_session(quest_id)
+
+    assert payload["ok"] is True
+    assert payload["acp_session"]["protocol"] == "agent-client-protocol"
+    assert payload["acp_session"]["quest_id"] == quest_id
+    assert payload["acp_session"]["cwd"] == payload["snapshot"]["quest_root"]
+    assert {item["name"] for item in payload["acp_session"]["mcp_servers"]} == {"memory", "artifact"}
+    assert any(command["name"] == "/status" for command in payload["acp_session"]["slash_commands"])
+
+
+def test_acp_event_polling_returns_session_updates(temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    ConfigManager(temp_home).ensure_files()
+    quest = QuestService(temp_home, skill_installer=SkillInstaller(repo_root(), temp_home)).create("acp event quest")
+    quest_id = quest["quest_id"]
+    app = DaemonApp(temp_home)
+    app.quest_service.append_message(
+        quest_id,
+        role="user",
+        content="请给出当前实验总结。",
+        source="local:default",
+    )
+
+    payload = app.handlers.quest_events(
+        quest_id,
+        path=f"/api/quests/{quest_id}/events?format=acp&session_id=session:test",
+    )
+
+    assert payload["quest_id"] == quest_id
+    assert payload["format"] == "acp"
+    assert payload["events"] == []
+    assert payload["acp_updates"]
+    update = payload["acp_updates"][-1]
+    assert update["method"] == "session/update"
+    assert update["params"]["sessionId"] == "session:test"
+    assert update["params"]["update"]["kind"] == "message"
+    assert update["params"]["update"]["message"]["role"] == "user"
+    assert update["params"]["update"]["message"]["content"] == "请给出当前实验总结。"
+
+
+def test_acp_event_message_preserves_run_metadata(temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    ConfigManager(temp_home).ensure_files()
+    quest = QuestService(temp_home, skill_installer=SkillInstaller(repo_root(), temp_home)).create("acp metadata quest")
+    quest_id = quest["quest_id"]
+    app = DaemonApp(temp_home)
+    app.quest_service.append_message(
+        quest_id,
+        role="assistant",
+        content="Streaming run finished.",
+        source="codex",
+        run_id="run-123",
+        skill_id="decision",
+    )
+
+    payload = app.handlers.quest_events(
+        quest_id,
+        path=f"/api/quests/{quest_id}/events?format=acp&session_id=session:test",
+    )
+
+    update = payload["acp_updates"][-1]["params"]["update"]["message"]
+    assert update["run_id"] == "run-123"
+    assert update["skill_id"] == "decision"
+
+
+def test_acp_artifact_update_exposes_interaction_metadata(temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    ConfigManager(temp_home).ensure_files()
+    quest = QuestService(temp_home, skill_installer=SkillInstaller(repo_root(), temp_home)).create("acp interaction quest")
+    quest_id = quest["quest_id"]
+    app = DaemonApp(temp_home)
+    quest_root = Path(quest["quest_root"])
+
+    app.artifact_service.interact(
+        quest_root,
+        kind="decision_request",
+        message="Choose the next route.",
+        deliver_to_bound_conversations=False,
+        include_recent_inbound_messages=False,
+        options=[{"id": "go", "label": "Go", "description": "Proceed now."}],
+    )
+
+    payload = app.handlers.quest_events(
+        quest_id,
+        path=f"/api/quests/{quest_id}/events?format=acp&session_id=session:test",
+    )
+
+    update = payload["acp_updates"][-1]["params"]["update"]
+    assert update["kind"] == "artifact"
+    assert update["artifact"]["interaction_id"]
+    assert update["artifact"]["expects_reply"] is True
+    assert update["artifact"]["options"][0]["id"] == "go"
+
+
+def test_acp_artifact_update_exposes_flow_metadata(temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    ConfigManager(temp_home).ensure_files()
+    quest = QuestService(temp_home, skill_installer=SkillInstaller(repo_root(), temp_home)).create("acp flow quest")
+    quest_id = quest["quest_id"]
+    app = DaemonApp(temp_home)
+    quest_root = Path(quest["quest_root"])
+
+    result = app.artifact_service.submit_idea(
+        quest_root,
+        mode="create",
+        title="Adapter route",
+        problem="Baseline saturates.",
+        hypothesis="A small adapter helps.",
+        mechanism="Insert a residual adapter.",
+        decision_reason="Promote the strongest next route.",
+    )
+
+    payload = app.handlers.quest_events(
+        quest_id,
+        path=f"/api/quests/{quest_id}/events?format=acp&session_id=session:test",
+    )
+
+    update = next(
+        item["params"]["update"]
+        for item in reversed(payload["acp_updates"])
+        if item["params"]["update"].get("kind") == "artifact"
+        and (item["params"]["update"].get("artifact") or {}).get("flow_type") == "idea_submission"
+    )
+    assert update["kind"] == "artifact"
+    assert update["artifact"]["flow_type"] == "idea_submission"
+    assert update["artifact"]["protocol_step"] == "create"
+    assert update["artifact"]["branch"] == result["branch"]
+    assert update["artifact"]["workspace_root"] == result["worktree_root"]
+    assert update["artifact"]["artifact_path"]
+    assert update["artifact"]["details"]["title"] == "Adapter route"
+
+
+def test_api_command_status_and_graph_append_assistant_messages(temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    ConfigManager(temp_home).ensure_files()
+    quest = QuestService(temp_home, skill_installer=SkillInstaller(repo_root(), temp_home)).create("acp command quest")
+    quest_id = quest["quest_id"]
+    app = DaemonApp(temp_home)
+
+    status_payload = app.handlers.command(quest_id, {"command": "/status", "source": "web-react"})
+    graph_payload = app.handlers.command(quest_id, {"command": "/graph", "source": "tui-ink"})
+
+    assert status_payload["ok"] is True
+    assert status_payload["type"] == "status"
+    assert status_payload["message_record"]["role"] == "assistant"
+    assert status_payload["message_record"]["source"] == "command"
+
+    assert graph_payload["ok"] is True
+    assert graph_payload["type"] == "graph"
+    assert graph_payload["graph"]["branch"] == "main"
+
+    events_payload = app.handlers.quest_events(
+        quest_id,
+        path=f"/api/quests/{quest_id}/events?format=acp&session_id=session:test",
+    )
+    assistant_messages = [
+        update["params"]["update"]["message"]["content"]
+        for update in events_payload["acp_updates"]
+        if update["params"]["update"]["kind"] == "message"
+        and update["params"]["update"]["message"]["role"] == "assistant"
+    ]
+
+    assert any(message.startswith(f"Quest {quest_id}") for message in assistant_messages)
+    assert any(message.startswith(f"Git graph refreshed for {quest_id}.") for message in assistant_messages)
+
+
+def test_acp_tool_updates_include_args_for_tool_results(temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    ConfigManager(temp_home).ensure_files()
+    quest = QuestService(temp_home, skill_installer=SkillInstaller(repo_root(), temp_home)).create("acp tool quest")
+    quest_id = quest["quest_id"]
+    quest_root = Path(quest["quest_root"])
+    app = DaemonApp(temp_home)
+
+    append_jsonl(
+        quest_root / ".ds" / "events.jsonl",
+        {
+            "event_id": "evt-tool-call",
+            "type": "runner.tool_call",
+            "quest_id": quest_id,
+            "run_id": "run-123",
+            "source": "codex",
+            "skill_id": "decision",
+            "tool_call_id": "ws_1",
+            "tool_name": "web_search",
+            "status": "calling",
+            "args": "OpenAI homepage official",
+            "created_at": "2026-03-09T00:00:00Z",
+        },
+    )
+    append_jsonl(
+        quest_root / ".ds" / "events.jsonl",
+        {
+            "event_id": "evt-tool-result",
+            "type": "runner.tool_result",
+            "quest_id": quest_id,
+            "run_id": "run-123",
+            "source": "codex",
+            "skill_id": "decision",
+            "tool_call_id": "ws_1",
+            "tool_name": "web_search",
+            "status": "completed",
+            "args": "OpenAI homepage official",
+            "output": '{"results": 3}',
+            "created_at": "2026-03-09T00:00:01Z",
+        },
+    )
+
+    payload = app.handlers.quest_events(
+        quest_id,
+        path=f"/api/quests/{quest_id}/events?format=acp&session_id=session:test",
+    )
+
+    tool_updates = [
+        update["params"]["update"]["data"]
+        for update in payload["acp_updates"]
+        if update["params"]["update"]["kind"] == "event"
+        and update["params"]["update"].get("data", {}).get("label") in {"tool_call", "tool_result"}
+    ]
+
+    call_update = next(item for item in tool_updates if item["label"] == "tool_call")
+    result_update = next(item for item in tool_updates if item["label"] == "tool_result")
+
+    assert call_update["args"] == "OpenAI homepage official"
+    assert result_update["args"] == "OpenAI homepage official"
+    assert result_update["output"] == '{"results": 3}'

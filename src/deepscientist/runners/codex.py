@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -12,8 +13,23 @@ from ..artifact import ArtifactService
 from ..gitops import export_git_graph
 from ..prompts import PromptBuilder
 from ..runtime_logs import JsonlLogger
-from ..shared import append_jsonl, ensure_dir, read_yaml, utc_now, write_json, write_text
+from ..shared import append_jsonl, ensure_dir, generate_id, read_yaml, utc_now, write_json, write_text
 from .base import RunRequest, RunResult
+
+
+def _compact_text(value: object, *, limit: int = 1200) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value.strip()
+    else:
+        try:
+            text = json.dumps(value, ensure_ascii=False, indent=2)
+        except TypeError:
+            text = str(value)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
 
 
 def _iter_event_texts(event: dict[str, Any]) -> list[str]:
@@ -44,6 +60,443 @@ def _iter_event_texts(event: dict[str, Any]) -> list[str]:
     return texts
 
 
+def _dedupe_texts(values: list[object]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        ordered.append(text)
+    return ordered
+
+
+def _extract_web_search_payload(item: dict[str, Any]) -> dict[str, Any]:
+    action = item.get("action") if isinstance(item.get("action"), dict) else {}
+    raw_queries = action.get("queries") if isinstance(action, dict) else None
+    queries = _dedupe_texts(
+        [
+            *(raw_queries if isinstance(raw_queries, list) else []),
+            action.get("query") if isinstance(action, dict) else "",
+            item.get("query"),
+        ]
+    )
+    query = ""
+    if isinstance(item.get("query"), str) and item.get("query").strip():
+        query = item.get("query").strip()
+    elif queries:
+        query = queries[0]
+    payload: dict[str, Any] = {
+        "query": query,
+        "queries": queries,
+        "action_type": action.get("type") if isinstance(action, dict) else None,
+    }
+    if isinstance(action, dict) and action:
+        payload["action"] = action
+    return payload
+
+
+def _web_search_text_payload(item: dict[str, Any]) -> str:
+    payload = _extract_web_search_payload(item)
+    return _compact_text(payload, limit=2400)
+
+
+def _message_events(
+    event: dict[str, Any],
+    *,
+    quest_id: str,
+    run_id: str,
+    skill_id: str,
+    created_at: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    event_type = str(event.get("type") or "")
+    item = event.get("item") if isinstance(event.get("item"), dict) else {}
+    item_type = str(item.get("type") or event.get("item_type") or "")
+    quest_events: list[dict[str, Any]] = []
+    output_texts: list[str] = []
+
+    if item_type == "agent_message":
+        texts = _dedupe_texts(_iter_event_texts(event))
+        for text in texts:
+            quest_events.append(
+                {
+                    "event_id": generate_id("evt"),
+                    "type": "runner.agent_message",
+                    "quest_id": quest_id,
+                    "run_id": run_id,
+                    "source": "codex",
+                    "skill_id": skill_id,
+                    "text": text,
+                    "created_at": created_at,
+                }
+            )
+        return quest_events, texts
+
+    if item_type in {"reasoning", "reasoning_summary"} or "reasoning" in event_type:
+        texts = _dedupe_texts(_iter_event_texts(event))
+        for text in texts:
+            quest_events.append(
+                {
+                    "event_id": generate_id("evt"),
+                    "type": "runner.reasoning",
+                    "quest_id": quest_id,
+                    "run_id": run_id,
+                    "source": "codex",
+                    "skill_id": skill_id,
+                    "text": text,
+                    "kind": item_type or "reasoning",
+                    "created_at": created_at,
+                }
+            )
+        return quest_events, []
+
+    if item_type:
+        return [], []
+
+    if event_type in {"thread.started", "turn.started", "turn.completed"}:
+        return [], []
+
+    texts = _dedupe_texts(_iter_event_texts(event))
+    for text in texts:
+        quest_events.append(
+            {
+                "event_id": generate_id("evt"),
+                "type": "runner.delta",
+                "quest_id": quest_id,
+                "run_id": run_id,
+                "source": "codex",
+                "skill_id": skill_id,
+                "text": text,
+                "created_at": created_at,
+            }
+        )
+    return quest_events, texts
+
+
+def _tool_call_id(event: dict[str, Any], item: dict[str, Any]) -> str:
+    for value in (
+        item.get("call_id"),
+        item.get("tool_call_id"),
+        item.get("id"),
+        event.get("call_id"),
+        event.get("tool_call_id"),
+        event.get("id"),
+    ):
+        if value:
+            return str(value)
+    return generate_id("tool")
+
+
+def _tool_name(event: dict[str, Any], item: dict[str, Any]) -> str:
+    for value in (
+        item.get("name"),
+        item.get("function"),
+        event.get("name"),
+        event.get("function"),
+    ):
+        if isinstance(value, dict):
+            nested = value.get("name")
+            if nested:
+                return str(nested)
+        elif value:
+            return str(value)
+    return "tool"
+
+
+def _tool_args(event: dict[str, Any], item: dict[str, Any]) -> str:
+    for value in (
+        item.get("command"),
+        item.get("query"),
+        item.get("action"),
+        item.get("arguments"),
+        item.get("input"),
+        event.get("arguments"),
+        event.get("input"),
+        event.get("query"),
+        event.get("action"),
+        event.get("delta"),
+    ):
+        text = _compact_text(value, limit=1200)
+        if text:
+            return text
+    return ""
+
+
+def _tool_output(event: dict[str, Any], item: dict[str, Any]) -> str:
+    for value in (
+        item.get("aggregated_output"),
+        item.get("changes"),
+        item.get("output"),
+        item.get("result"),
+        item.get("content"),
+        event.get("aggregated_output"),
+        event.get("changes"),
+        event.get("output"),
+        event.get("result"),
+        event.get("content"),
+    ):
+        text = _compact_text(value, limit=1200)
+        if text:
+            return text
+    return ""
+
+
+def _mcp_result_payload(item: dict[str, Any]) -> dict[str, Any]:
+    result = item.get("result")
+    if isinstance(result, dict):
+        structured = result.get("structured_content") or result.get("structuredContent")
+        if isinstance(structured, dict):
+            return structured
+        if isinstance(result, dict):
+            return result
+    return {}
+
+
+def _mcp_tool_metadata(
+    *,
+    quest_id: str,
+    run_id: str,
+    server: str,
+    tool: str,
+    item: dict[str, Any],
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "mcp_server": server,
+        "mcp_tool": tool,
+    }
+    arguments = item.get("arguments")
+    if isinstance(arguments, dict):
+        if isinstance(arguments.get("command"), str):
+            metadata["command"] = arguments.get("command")
+        if isinstance(arguments.get("workdir"), str):
+            metadata["workdir"] = arguments.get("workdir")
+        if isinstance(arguments.get("mode"), str):
+            metadata["mode"] = arguments.get("mode")
+        if isinstance(arguments.get("timeout_seconds"), int):
+            metadata["timeout_seconds"] = arguments.get("timeout_seconds")
+        if "comment" in arguments:
+            metadata["comment"] = arguments.get("comment")
+    metadata["session_id"] = f"quest:{quest_id}"
+    metadata["agent_id"] = "pi"
+    metadata["agent_instance_id"] = run_id
+    metadata["quest_id"] = quest_id
+    result_payload = _mcp_result_payload(item)
+    if server == "bash_exec" and tool == "bash_exec" and result_payload:
+        for key in (
+            "bash_id",
+            "status",
+            "started_at",
+            "finished_at",
+            "exit_code",
+            "stop_reason",
+            "last_progress",
+            "log_path",
+        ):
+            if key in result_payload:
+                metadata[key] = result_payload.get(key)
+    return metadata
+
+
+def _tool_event(
+    event: dict[str, Any],
+    *,
+    quest_id: str,
+    run_id: str,
+    skill_id: str,
+    known_tool_names: dict[str, str],
+    created_at: str,
+) -> dict[str, Any] | None:
+    event_type = str(event.get("type") or "")
+    item = event.get("item") if isinstance(event.get("item"), dict) else {}
+    item_type = str(item.get("type") or event.get("item_type") or "")
+
+    if item_type == "command_execution":
+        tool_call_id = _tool_call_id(event, item)
+        tool_name = "shell_command"
+        known_tool_names[tool_call_id] = tool_name
+        if event_type == "item.started" or str(item.get("status") or "") == "in_progress":
+            return {
+                "event_id": generate_id("evt"),
+                "type": "runner.tool_call",
+                "quest_id": quest_id,
+                "run_id": run_id,
+                "source": "codex",
+                "skill_id": skill_id,
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "status": "calling",
+                "args": _tool_args(event, item),
+                "raw_event_type": event_type,
+                "created_at": created_at,
+            }
+        return {
+            "event_id": generate_id("evt"),
+            "type": "runner.tool_result",
+            "quest_id": quest_id,
+            "run_id": run_id,
+            "source": "codex",
+            "skill_id": skill_id,
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+            "status": str(item.get("status") or "completed"),
+            "args": _tool_args(event, item),
+            "output": _tool_output(event, item),
+            "raw_event_type": event_type,
+            "created_at": created_at,
+        }
+
+    if item_type == "web_search":
+        tool_call_id = _tool_call_id(event, item)
+        tool_name = "web_search"
+        search_payload = _extract_web_search_payload(item)
+        metadata = {"search": search_payload}
+        known_tool_names[tool_call_id] = tool_name
+        if event_type == "item.started":
+            return {
+                "event_id": generate_id("evt"),
+                "type": "runner.tool_call",
+                "quest_id": quest_id,
+                "run_id": run_id,
+                "source": "codex",
+                "skill_id": skill_id,
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "status": "calling",
+                "args": _web_search_text_payload(item),
+                "metadata": metadata,
+                "raw_event_type": event_type,
+                "created_at": created_at,
+            }
+        return {
+            "event_id": generate_id("evt"),
+            "type": "runner.tool_result",
+            "quest_id": quest_id,
+            "run_id": run_id,
+            "source": "codex",
+            "skill_id": skill_id,
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+            "status": "completed",
+            "args": _web_search_text_payload(item),
+            "output": _web_search_text_payload(item),
+            "metadata": metadata,
+            "raw_event_type": event_type,
+            "created_at": created_at,
+        }
+
+    if item_type == "file_change":
+        tool_call_id = _tool_call_id(event, item)
+        tool_name = "file_change"
+        known_tool_names[tool_call_id] = tool_name
+        return {
+            "event_id": generate_id("evt"),
+            "type": "runner.tool_result",
+            "quest_id": quest_id,
+            "run_id": run_id,
+            "source": "codex",
+            "skill_id": skill_id,
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+            "status": str(item.get("status") or "completed"),
+            "output": _tool_output(event, item),
+            "raw_event_type": event_type,
+            "created_at": created_at,
+        }
+
+    if item_type == "mcp_tool_call":
+        tool_call_id = _tool_call_id(event, item)
+        server = str(item.get("server") or "").strip()
+        tool = str(item.get("tool") or "").strip()
+        tool_name = f"{server}.{tool}" if server and tool else tool or server or "mcp_tool"
+        metadata = _mcp_tool_metadata(
+            quest_id=quest_id,
+            run_id=run_id,
+            server=server,
+            tool=tool,
+            item=item,
+        )
+        known_tool_names[tool_call_id] = tool_name
+        if event_type == "item.started" or str(item.get("status") or "") == "in_progress":
+            return {
+                "event_id": generate_id("evt"),
+                "type": "runner.tool_call",
+                "quest_id": quest_id,
+                "run_id": run_id,
+                "source": "codex",
+                "skill_id": skill_id,
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "status": "calling",
+                "args": _tool_args(event, item),
+                "mcp_server": server,
+                "mcp_tool": tool,
+                "metadata": metadata,
+                "raw_event_type": event_type,
+                "created_at": created_at,
+            }
+        return {
+            "event_id": generate_id("evt"),
+            "type": "runner.tool_result",
+            "quest_id": quest_id,
+            "run_id": run_id,
+            "source": "codex",
+            "skill_id": skill_id,
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+            "status": str(item.get("status") or "completed"),
+            "args": _tool_args(event, item),
+            "output": _tool_output(event, item),
+            "mcp_server": server,
+            "mcp_tool": tool,
+            "metadata": metadata,
+            "raw_event_type": event_type,
+            "created_at": created_at,
+        }
+
+    if item_type in {"function_call", "custom_tool_call", "tool_call"} or "function_call" in event_type or "tool_call" in event_type:
+        tool_call_id = _tool_call_id(event, item)
+        tool_name = _tool_name(event, item)
+        known_tool_names[tool_call_id] = tool_name
+        return {
+            "event_id": generate_id("evt"),
+            "type": "runner.tool_call",
+            "quest_id": quest_id,
+            "run_id": run_id,
+            "source": "codex",
+            "skill_id": skill_id,
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+            "status": "calling" if "delta" in event_type or "added" in event_type else "completed",
+            "args": _tool_args(event, item),
+            "raw_event_type": event_type,
+            "created_at": created_at,
+        }
+
+    if item_type in {"function_call_output", "custom_tool_call_output", "tool_result", "tool_call_output"} or "function_call_output" in event_type or "tool_result" in event_type:
+        tool_call_id = _tool_call_id(event, item)
+        tool_name = known_tool_names.get(tool_call_id) or _tool_name(event, item)
+        return {
+            "event_id": generate_id("evt"),
+            "type": "runner.tool_result",
+            "quest_id": quest_id,
+            "run_id": run_id,
+            "source": "codex",
+            "skill_id": skill_id,
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+            "status": "completed",
+            "args": _tool_args(event, item),
+            "output": _tool_output(event, item),
+            "raw_event_type": event_type,
+            "created_at": created_at,
+        }
+
+    return None
+
+
 class CodexRunner:
     def __init__(
         self,
@@ -61,8 +514,11 @@ class CodexRunner:
         self.logger = logger
         self.prompt_builder = prompt_builder
         self.artifact_service = artifact_service
+        self._process_lock = threading.Lock()
+        self._active_processes: dict[str, subprocess.Popen[str]] = {}
 
     def run(self, request: RunRequest) -> RunResult:
+        workspace_root = request.worktree_root or request.quest_root
         run_root = ensure_dir(request.quest_root / ".ds" / "runs" / request.run_id)
         history_root = ensure_dir(request.quest_root / ".ds" / "codex_history" / request.run_id)
         prompt = self.prompt_builder.build(
@@ -74,18 +530,29 @@ class CodexRunner:
         write_text(run_root / "prompt.md", prompt)
 
         codex_home = self._prepare_project_codex_home(
-            request.quest_root,
+            workspace_root,
+            quest_root=request.quest_root,
             quest_id=request.quest_id,
             run_id=request.run_id,
         )
         command = self._build_command(request, prompt)
-        write_json(run_root / "command.json", {"command": command, "codex_home": str(codex_home)})
+        write_json(
+            run_root / "command.json",
+            {
+                "command": command,
+                "codex_home": str(codex_home),
+                "quest_root": str(request.quest_root),
+                "workspace_root": str(workspace_root),
+                "cwd": str(workspace_root),
+            },
+        )
 
         env = dict(**os.environ)
         env["CODEX_HOME"] = str(codex_home)
         env["DS_HOME"] = str(self.home)
         env["DS_QUEST_ID"] = request.quest_id
         env["DS_QUEST_ROOT"] = str(request.quest_root)
+        env["DS_WORKTREE_ROOT"] = str(workspace_root)
         env["DS_RUN_ID"] = request.run_id
         quest_yaml = read_yaml(request.quest_root / "quest.yaml", {})
         env["DS_ACTIVE_ANCHOR"] = str(quest_yaml.get("active_anchor", "baseline"))
@@ -94,121 +561,245 @@ class CodexRunner:
         env["DS_TEAM_MODE"] = "single"
         process = subprocess.Popen(
             command,
-            cwd=str(request.quest_root),
+            cwd=str(workspace_root),
             env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
+        with self._process_lock:
+            self._active_processes[request.quest_id] = process
         assert process.stdin is not None
         assert process.stdout is not None
         assert process.stderr is not None
-        process.stdin.write(prompt)
-        process.stdin.close()
+        try:
+            process.stdin.write(prompt)
+            process.stdin.close()
 
-        output_parts: list[str] = []
-        history_events = history_root / "events.jsonl"
-        stdout_events = run_root / "stdout.jsonl"
+            output_parts: list[str] = []
+            final_output_parts: list[str] = []
+            history_events = history_root / "events.jsonl"
+            stdout_events = run_root / "stdout.jsonl"
+            quest_events = request.quest_root / ".ds" / "events.jsonl"
+            known_tool_names: dict[str, str] = {}
 
-        for raw_line in process.stdout:
-            line = raw_line.rstrip("\n")
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                payload = {"raw": line}
-            append_jsonl(history_events, {"timestamp": utc_now(), "event": payload})
-            append_jsonl(stdout_events, {"timestamp": utc_now(), "line": line})
-            for chunk in _iter_event_texts(payload):
-                output_parts.append(chunk)
+            append_jsonl(
+                quest_events,
+                {
+                    "event_id": generate_id("evt"),
+                    "type": "runner.turn_start",
+                    "quest_id": request.quest_id,
+                    "run_id": request.run_id,
+                    "source": "codex",
+                    "skill_id": request.skill_id,
+                    "model": request.model,
+                    "created_at": utc_now(),
+                },
+            )
 
-        stderr_text = process.stderr.read()
-        exit_code = process.wait()
-        output_text = "\n".join(part.strip() for part in output_parts if part.strip()).strip()
-        write_text(history_root / "assistant.md", (output_text or "") + ("\n" if output_text else ""))
-        write_text(run_root / "stderr.txt", stderr_text)
-        result_payload = {
-            "ok": exit_code == 0,
-            "run_id": request.run_id,
-            "model": request.model,
-            "exit_code": exit_code,
-            "history_root": str(history_root),
-            "run_root": str(run_root),
-            "output_text": output_text,
-            "stderr_text": stderr_text,
-            "completed_at": utc_now(),
-        }
-        write_json(run_root / "result.json", result_payload)
-        write_json(history_root / "meta.json", result_payload)
-        self.logger.log(
-            "info",
-            "runner.codex.completed",
-            quest_id=request.quest_id,
-            run_id=request.run_id,
-            model=request.model,
-            exit_code=exit_code,
-        )
-        artifact_result = self.artifact_service.record(
-            request.quest_root,
-            {
-                "kind": "run",
+            for raw_line in process.stdout:
+                line = raw_line.rstrip("\n")
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    payload = {"raw": line}
+                timestamp = utc_now()
+                append_jsonl(history_events, {"timestamp": timestamp, "event": payload})
+                append_jsonl(stdout_events, {"timestamp": timestamp, "line": line})
+                tool_event = _tool_event(
+                    payload,
+                    quest_id=request.quest_id,
+                    run_id=request.run_id,
+                    skill_id=request.skill_id,
+                    known_tool_names=known_tool_names,
+                    created_at=timestamp,
+                )
+                if tool_event is not None:
+                    append_jsonl(quest_events, tool_event)
+                message_events, message_output_parts = _message_events(
+                    payload,
+                    quest_id=request.quest_id,
+                    run_id=request.run_id,
+                    skill_id=request.skill_id,
+                    created_at=timestamp,
+                )
+                for message_event in message_events:
+                    append_jsonl(quest_events, message_event)
+                    if message_event.get("type") == "runner.agent_message":
+                        text = message_event.get("text")
+                        if isinstance(text, str) and text.strip():
+                            final_output_parts.append(text.strip())
+                output_parts.extend(message_output_parts)
+
+            stderr_text = process.stderr.read()
+            exit_code = process.wait()
+            summary_text = "\n".join(part.strip() for part in output_parts if part.strip()).strip()
+            output_text = (
+                next(
+                    (
+                        part.strip()
+                        for part in reversed(final_output_parts)
+                        if isinstance(part, str) and part.strip()
+                    ),
+                    "",
+                )
+                or summary_text
+            )
+            append_jsonl(
+                quest_events,
+                {
+                    "event_id": generate_id("evt"),
+                    "type": "runner.turn_finish",
+                    "quest_id": request.quest_id,
+                    "run_id": request.run_id,
+                    "source": "codex",
+                    "skill_id": request.skill_id,
+                    "model": request.model,
+                    "exit_code": exit_code,
+                    "stderr_text": stderr_text[:2000],
+                    "summary": (summary_text or output_text)[:1000],
+                    "created_at": utc_now(),
+                },
+            )
+            write_text(history_root / "assistant.md", (output_text or "") + ("\n" if output_text else ""))
+            write_text(run_root / "stderr.txt", stderr_text)
+            result_payload = {
+                "ok": exit_code == 0,
                 "run_id": request.run_id,
-                "run_kind": request.skill_id,
                 "model": request.model,
-                "summary": output_text[:1000],
+                "exit_code": exit_code,
                 "history_root": str(history_root),
                 "run_root": str(run_root),
-                "exit_code": exit_code,
-            },
-        )
-        export_git_graph(request.quest_root, request.quest_root / "artifacts" / "graphs")
-        write_json(run_root / "artifact.json", artifact_result)
-        return RunResult(
-            ok=exit_code == 0,
-            run_id=request.run_id,
-            model=request.model,
-            output_text=output_text,
-            exit_code=exit_code,
-            history_root=history_root,
-            run_root=run_root,
-            stderr_text=stderr_text,
-        )
+                "output_text": output_text,
+                "stderr_text": stderr_text,
+                "completed_at": utc_now(),
+            }
+            write_json(run_root / "result.json", result_payload)
+            write_json(history_root / "meta.json", result_payload)
+            self.logger.log(
+                "info",
+                "runner.codex.completed",
+                quest_id=request.quest_id,
+                run_id=request.run_id,
+                model=request.model,
+                exit_code=exit_code,
+            )
+            artifact_result = self.artifact_service.record(
+                request.quest_root,
+                {
+                    "kind": "run",
+                    "run_id": request.run_id,
+                    "run_kind": request.skill_id,
+                    "model": request.model,
+                    "summary": (summary_text or output_text)[:1000],
+                    "history_root": str(history_root),
+                    "run_root": str(run_root),
+                    "exit_code": exit_code,
+                },
+                workspace_root=workspace_root,
+                commit_message=f"run: {request.skill_id} {request.run_id}",
+            )
+            export_git_graph(request.quest_root, request.quest_root / "artifacts" / "graphs")
+            write_json(run_root / "artifact.json", artifact_result)
+            return RunResult(
+                ok=exit_code == 0,
+                run_id=request.run_id,
+                model=request.model,
+                output_text=output_text,
+                exit_code=exit_code,
+                history_root=history_root,
+                run_root=run_root,
+                stderr_text=stderr_text,
+            )
+        finally:
+            with self._process_lock:
+                if self._active_processes.get(request.quest_id) is process:
+                    self._active_processes.pop(request.quest_id, None)
+
+    def interrupt(self, quest_id: str) -> bool:
+        with self._process_lock:
+            process = self._active_processes.get(quest_id)
+        if process is None or process.poll() is not None:
+            return False
+        process.terminate()
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=3)
+        return True
 
     def _build_command(self, request: RunRequest, prompt: str) -> list[str]:
+        workspace_root = request.worktree_root or request.quest_root
         command = [
             shutil.which(self.binary) or self.binary,
+            "--search",
             "exec",
             "--json",
             "--cd",
-            str(request.quest_root),
+            str(workspace_root),
             "--skip-git-repo-check",
             "--model",
             request.model,
         ]
-        if request.approval_policy == "never":
-            command.extend(["--ask-for-approval", "never"])
-        elif request.approval_policy == "on-request":
-            command.append("--full-auto")
+        if request.approval_policy:
+            command.extend(["-c", f'approval_policy="{request.approval_policy}"'])
         if request.sandbox_mode:
             command.extend(["--sandbox", request.sandbox_mode])
         command.append("-")
         return command
 
-    def _prepare_project_codex_home(self, quest_root: Path, *, quest_id: str, run_id: str) -> Path:
-        target = ensure_dir(quest_root / ".codex")
+    def _prepare_project_codex_home(
+        self,
+        workspace_root: Path,
+        *,
+        quest_root: Path,
+        quest_id: str,
+        run_id: str,
+    ) -> Path:
+        target = ensure_dir(workspace_root / ".codex")
         source = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser()
         for filename in ("config.toml", "auth.json"):
             source_path = source / filename
             target_path = target / filename
             if source_path.exists() and not target_path.exists():
+                if source_path.resolve() == target_path.resolve():
+                    continue
                 shutil.copy2(source_path, target_path)
         ensure_dir(target / "skills")
-        self._inject_built_in_mcp(target, quest_root=quest_root, quest_id=quest_id, run_id=run_id)
+        quest_skills_root = quest_root / ".codex" / "skills"
+        if quest_skills_root.exists():
+            for source_path in sorted(quest_skills_root.rglob("*")):
+                relative = source_path.relative_to(quest_skills_root)
+                target_path = target / "skills" / relative
+                if source_path.is_dir():
+                    ensure_dir(target_path)
+                    continue
+                if source_path.resolve() == target_path.resolve():
+                    continue
+                ensure_dir(target_path.parent)
+                shutil.copy2(source_path, target_path)
+        self._inject_built_in_mcp(
+            target,
+            quest_root=quest_root,
+            workspace_root=workspace_root,
+            quest_id=quest_id,
+            run_id=run_id,
+        )
         return target
 
-    def _inject_built_in_mcp(self, codex_home: Path, *, quest_root: Path, quest_id: str, run_id: str) -> None:
+    def _inject_built_in_mcp(
+        self,
+        codex_home: Path,
+        *,
+        quest_root: Path,
+        workspace_root: Path,
+        quest_id: str,
+        run_id: str,
+    ) -> None:
         config_path = codex_home / "config.toml"
         existing = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
         marker_start = "# BEGIN DEEPSCIENTIST BUILTINS"
@@ -223,7 +814,9 @@ class CodexRunner:
             "DS_HOME": str(self.home),
             "DS_QUEST_ID": quest_id,
             "DS_QUEST_ROOT": str(quest_root),
+            "DS_WORKTREE_ROOT": str(workspace_root),
             "DS_RUN_ID": run_id,
+            "DS_WORKER_ID": run_id,
             "DS_ACTIVE_ANCHOR": str(read_yaml(quest_root / "quest.yaml", {}).get("active_anchor", "baseline")),
             "DS_CONVERSATION_ID": f"quest:{quest_id}",
             "DS_AGENT_ROLE": "pi",
@@ -238,6 +831,8 @@ class CodexRunner:
                 self._mcp_block("memory", shared_env),
                 "",
                 self._mcp_block("artifact", shared_env),
+                "",
+                self._mcp_block("bash_exec", shared_env),
                 marker_end,
             ]
         ).strip()

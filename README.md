@@ -17,7 +17,7 @@ This repository is intentionally centered on a small core:
 
 ## Current Status
 
-This repository is currently **docs-first**.
+This repository now has a working core skeleton, but the architecture remains intentionally docs-led.
 
 The goal is to implement a minimal but complete Core that can:
 
@@ -34,16 +34,71 @@ The default user path should feel like:
 
 ```bash
 npm install -g deepscientist
-ds init
-ds daemon
-ds new "reproduce baseline X and test whether idea Y improves it"
+research
+```
+
+For a source checkout, treat this repository as a development tree and install it into a separate runtime tree:
+
+```bash
+bash install.sh
+ds
+```
+
+The local installer deploys the current working tree into `~/DeepScientist/cli` by default, writes launchers into `~/.local/bin`, builds the web/TUI bundles inside the install tree, and keeps `node_modules` out of the current development checkout. The default runtime home is the same root: `~/DeepScientist/`.
+
+If you want a custom location:
+
+```bash
+bash install.sh --dir /data/deepscientist --bin-dir /data/deepscientist/bin
+/data/deepscientist/bin/ds
+```
+
+The same custom install path works through `npm`:
+
+```bash
+npm run install:local -- --dir /data/deepscientist --bin-dir /data/deepscientist/bin
+```
+
+If you prefer exact paths instead of a base directory, use:
+
+```bash
+bash install.sh --install-dir /data/deepscientist/cli --bin-dir /data/deepscientist/bin
+```
+
+You can also drive this from environment variables:
+
+```bash
+DEEPSCIENTIST_BASE_DIR=/data/deepscientist \
+DEEPSCIENTIST_BIN_DIR=/data/deepscientist/bin \
+npm run install:local
 ```
 
 Implementation direction:
 
 - the published package is `npm`-installable
 - the daemon/runtime code lives in Python under `src/deepscientist/`
-- the launcher bootstraps or updates the Python runtime automatically
+- the launcher bootstraps or updates the Python runtime automatically under `~/DeepScientist/runtime/venv`
+- launcher startup repairs first-party skills in `~/.codex/skills/` and `~/.claude/agents/` when they are missing or when `src/skills/` changed
+- the launcher binds the daemon on `0.0.0.0:20999` by default and opens the local workspace through `0.0.0.0:20999`
+- the default launcher opens both the Ink TUI and the web workspace together
+- launcher aliases should include:
+  - `research`
+  - `resear`
+  - `ds-cli`
+  - `ds`
+- daemon lifecycle control should feel direct:
+  - `research --stop`
+  - `research --restart`
+  - `research --tui`
+  - `research --web`
+  - `research --both`
+- TUI quest control now follows explicit semantics:
+  - bare text in home mode continues the currently selected quest
+  - `/new <goal>` is the explicit way to create a new quest
+  - `/projects` opens the quest picker
+  - `/stop [quest_id|index]` stops a quest
+  - `/resume [quest_id|index]` resumes a stopped quest
+  - `/stop` and `/resume` without arguments open a DS_2027-style selection page
 - `ds init` validates local Git readiness and guides the user to set `git config user.name` and `git config user.email` when needed
 - installation also syncs first-party skills into:
   - `~/.codex/skills/deepscientist-*`
@@ -104,8 +159,14 @@ The system should support:
 
 - CLI
 - required local TUI
-- required local web UI on `127.0.0.1:20888`
+- required local web UI bound on `0.0.0.0:20999` and locally reachable at `0.0.0.0:20999`
 - optional connectors such as QQ, Telegram, Discord, Slack, Gmail, Feishu, and WhatsApp
+
+QQ is gateway-direct only in DeepScientist Core:
+
+- inbound chat comes from the built-in QQ gateway client
+- outbound sends use Tencent `app_id` + `app_secret`
+- `openid` / `group_openid` are the only valid active send targets
 
 Connectors are not notification-only.
 They must be able to:
@@ -121,6 +182,21 @@ The local web UI should also stay usable on phone-sized screens:
 - single-column on narrow viewports
 - bottom-fixed composer
 - drawers or sheets for memory, graph, skills, and settings
+
+## Current Runtime Layout
+
+The current codebase is split like this:
+
+- Python daemon and core services:
+  - `src/deepscientist/`
+- React/Vite web workspace:
+  - `src/ui/`
+- Ink/React local TUI:
+  - `src/tui/`
+- npm launcher and bootstrap:
+  - `bin/ds.js`
+
+The local web workspace now uses path-based routes such as `/projects` and `/projects/<quest_id>` and is served by the same daemon API/event surface as the TUI.
 
 ## Canonical Docs
 

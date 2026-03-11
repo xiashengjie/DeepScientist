@@ -19,9 +19,13 @@ DECISION_ACTIONS = {
     "branch",
     "prepare_branch",
     "reuse_baseline",
+    "attach_baseline",
+    "publish_baseline",
     "reset",
     "stop",
     "write",
+    "finalize",
+    "request_user_decision",
 }
 
 

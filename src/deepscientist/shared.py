@@ -66,7 +66,13 @@ def write_json(path: Path, payload: Any) -> None:
 def read_json(path: Path, default: Any = None) -> Any:
     if not path.exists():
         return default
-    return json.loads(path.read_text(encoding="utf-8"))
+    payload = path.read_text(encoding="utf-8").strip()
+    if not payload:
+        return default
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        return default
 
 
 def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
@@ -83,7 +89,12 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
         line = line.strip()
         if not line:
             continue
-        items.append(json.loads(line))
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            items.append(payload)
     return items
 
 
@@ -135,4 +146,3 @@ def run_command(
 
 def which(binary: str) -> str | None:
     return shutil.which(binary)
-

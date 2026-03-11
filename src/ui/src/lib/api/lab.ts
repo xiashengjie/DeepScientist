@@ -1,0 +1,3649 @@
+import { client as questClient } from '@/lib/api'
+import { shouldUseQuestProject } from '@/lib/runtime/quest-runtime'
+import type {
+  GuidanceVm,
+  GitBranchNode,
+  GitBranchesPayload,
+  GitComparePayload,
+  MemoryCard,
+  OpenDocumentPayload,
+  QuestNodeTrace,
+  QuestNodeTraceAction,
+  QuestNodeTraceDetailPayload,
+  QuestNodeTraceListPayload,
+  QuestSummary,
+  WorkflowEntry,
+  WorkflowPayload,
+} from '@/types'
+
+import { apiClient } from './client'
+
+const LAB_BASE = (projectId: string) => `/api/v1/projects/${projectId}/lab`
+
+type LabRequestOptions = {
+  silent?: boolean
+}
+
+function buildLabRequestConfig(options?: LabRequestOptions) {
+  if (!options?.silent) return undefined
+  return {
+    headers: {
+      'x-skip-error-toast': '1',
+    },
+  }
+}
+
+function isLocalLabFallbackError(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  const status = (error as { response?: { status?: number } }).response?.status
+  return status === 401 || status === 403 || status === 404 || status === 405 || status === 501 || status === 502 || status === 503
+}
+
+async function shouldUseLocalQuestLab(projectId: string): Promise<boolean> {
+  return shouldUseQuestProject(projectId)
+}
+
+export type LabListResponse<T> = {
+  items: T[]
+}
+
+export type LabTemplate = {
+  template_id: string
+  template_key: string
+  name: string
+  label?: string | null
+  role?: string | null
+  purpose?: string | null
+  description?: string | null
+  prompt_scope?: string | null
+  agent_engine?: string | null
+  execution_target?: string | null
+  logo_svg_path?: string | null
+  default_skills?: string[] | null
+  typical_dod?: string | null
+  recommended_subagents?: string[] | null
+  init_question?: string | null
+  init_answer?: string | null
+  mcp_servers?: string[] | null
+}
+
+export type LabPromptPool = {
+  template_id: string
+  template_key: string
+  name_prompts: string[]
+  capability_prompts: string[]
+  strength_prompts: string[]
+  motto_prompts: string[]
+}
+
+export type LabAgentInstance = {
+  instance_id: string
+  agent_id: string
+  mention_label?: string | null
+  display_name?: string | null
+  template_id?: string | null
+  created_by_agent_instance_id?: string | null
+  prompt_template_md?: string | null
+  status?: string | null
+  stats_json?: Record<string, number> | null
+  profile_md?: string | null
+  profile_json?: Record<string, unknown> | null
+  avatar_frame_color?: string | null
+  avatar_logo?: string | null
+  direct_session_id?: string | null
+  active_quest_id?: string | null
+  active_quest_node_id?: string | null
+  active_quest_branch?: string | null
+  active_quest_stage_key?: string | null
+  cli_server_id?: string | null
+  status_updated_at?: string | null
+  created_at?: string | null
+}
+
+export type LabAgentDeleteResponse = {
+  agent_instance_id: string
+  deleted: boolean
+}
+
+export type LabAgentPromptResponse = {
+  content: string
+  updated_at?: string | null
+}
+
+export type LabQuest = {
+  quest_id: string
+  title: string
+  summary?: string | null
+  status?: string | null
+  description?: string | null
+  tags?: string[] | null
+  baseline_root_id?: string | null
+  research_contract?: Record<string, unknown> | null
+  pi_agent_instance_id?: string | null
+  pi_state?: string | null
+  cli_server_id?: string | null
+  git_head_branch?: string | null
+  last_event_at?: string | null
+  pending_question_count?: number | null
+  github_push_default_enabled?: boolean
+  github_push?: Record<string, unknown> | null
+  runtime?: QuestRuntimeVM | null
+  governance?: QuestGovernanceStateVM | null
+  summary_vm?: QuestSummaryVM | null
+  created_at?: string | null
+}
+
+export type LabStartResearchGithubPushPayload = {
+  enabled: boolean
+  repo_owner?: string | null
+  repo_name?: string | null
+  create_if_missing?: boolean
+  private_repo?: boolean
+}
+
+export type LabStartResearchResponse = {
+  quest: LabQuest
+  pi_agent: LabAgentInstance
+  direct_session_id: string
+  kickoff_queued: boolean
+  kickoff_started?: boolean
+  kickoff_dispatch_mode?: string | null
+  quest_created: boolean
+  pi_created: boolean
+  github_push?: Record<string, unknown> | null
+  warnings: string[]
+}
+
+export type LabQuestNode = {
+  node_id: string
+  quest_id: string
+  node_key: string
+  title?: string | null
+  status?: string | null
+  position?: number | null
+  report_md?: string | null
+  report_updated_at?: string | null
+}
+
+export type LabMetricObjective = {
+  key: string
+  label?: string | null
+  direction?: 'higher' | 'lower' | null
+  importance?: number | null
+  unit?: string | null
+  target?: number | null
+}
+
+export type LabMetricCurvePoint = {
+  seq?: number | null
+  ts?: string | null
+  value?: number | null
+  run_id?: string | null
+  event_id?: string | null
+  is_sota?: boolean
+}
+
+export type LabMetricCurve = {
+  full?: LabMetricCurvePoint[] | null
+  sota?: LabMetricCurvePoint[] | null
+  direction?: 'higher' | 'lower' | null
+  label?: string | null
+  importance?: number | null
+}
+
+export type LabQuestGraphNode = {
+  node_id: string
+  branch_name: string
+  parent_branch?: string | null
+  branch_class?: 'main' | 'idea' | 'analysis' | 'paper' | null
+  worktree_rel_path?: string | null
+  latest_commit?: string | null
+  status?: string | null
+  idea_id?: string | null
+  idea_json?: Record<string, unknown> | null
+  metrics_json?: Record<string, unknown> | null
+  verdict?: string | null
+  claim_verdict?: 'support' | 'refute' | 'inconclusive' | null
+  go_decision?: 'go' | 'no-go' | null
+  created_at?: string | null
+  stage_key?: string | null
+  stage_title?: string | null
+  event_ids?: string[] | null
+  event_count?: number | null
+  baseline_state?: string | null
+  push_state?: string | null
+  writer_state?: string | null
+  runtime_state?: string | null
+  protected_state?: string | null
+  divergence_state?: string | null
+  reconcile_state?: string | null
+  proof_state?: string | null
+  submission_state?: string | null
+  retire_state?: string | null
+  claim_evidence_state?: string | null
+  commit_trust?: string | null
+  target_label?: string | null
+  node_summary?: {
+    last_event_type?: string | null
+    last_reply?: string | null
+    last_error?: string | null
+    metrics_delta?: Record<string, unknown> | null
+    latest_metrics?: Record<string, unknown> | null
+    trend_preview?: Array<{ ts?: string | null; value?: number | null }> | null
+    metric_curves?: Record<string, LabMetricCurve> | null
+    claim_verdict?: 'support' | 'refute' | 'inconclusive' | null
+    go_decision?: 'go' | 'no-go' | null
+  } | null
+}
+
+export type BranchWorkbenchVM = {
+  branchName: string
+  branchClass: 'main' | 'idea' | 'analysis' | 'paper' | string
+  parentBranch?: string | null
+  worktreeRelPath?: string | null
+  isHead?: boolean
+  stage?: string | null
+  nowDoing?: string | null
+  decisionReason?: string | null
+  evidenceStatus?: string | null
+  baselineState?: string | null
+  pushState?: string | null
+  writerState?: string | null
+  runtimeState?: string | null
+  protectedState?: string | null
+  divergenceState?: string | null
+  reconcileState?: string | null
+  proofState?: string | null
+  submissionState?: string | null
+  retireState?: string | null
+  claimEvidenceState?: string | null
+  commitTrust?: string | null
+  latestMetrics?: Record<string, unknown> | null
+  metricDelta?: Record<string, unknown> | null
+  trendPreview?: Array<Record<string, unknown>> | null
+  memorySummary?: Record<string, unknown> | null
+}
+
+export type QuestRuntimeVM = {
+  runningAgents: number
+  runningPiAgents: number
+  runningWorkerAgents?: number
+  lastHeartbeatAt?: string | null
+  piState?: string | null
+  parallelLimit?: number
+  activeSlots?: number
+  availableSlots?: number
+  blockedReasons?: string[] | null
+  cliStatus?: string | null
+  cliLastSeenAt?: string | null
+}
+
+export type LabQuestRuntimeScheduler = {
+  parallel_limit: number
+  active_slots: number
+  available_slots: number
+  blocked_reasons: string[]
+}
+
+export type LabQuestRuntimeRun = {
+  run_id: string
+  session_id?: string | null
+  agent_id?: string | null
+  agent_instance_id?: string | null
+  template_key?: string | null
+  branch_name: string
+  route_id?: string | null
+  stage_key?: string | null
+  status: string
+  pi_launched?: boolean
+  resource_hint?: string | null
+  worktree_rel_path?: string | null
+  role?: string | null
+  started_at?: string | null
+  last_heartbeat_at?: string | null
+}
+
+export type LabQuestRuntimeRoute = {
+  route_id: string
+  branch_name: string
+  worktree_rel_path?: string | null
+  status: string
+  parallel_group?: string | null
+  active_run_count: number
+  stage_keys: string[]
+  template_keys: string[]
+  agent_instance_ids: string[]
+  session_ids: string[]
+  last_heartbeat_at?: string | null
+  blocked_reasons?: string[] | null
+}
+
+export type LabQuestRuntimeCommand = {
+  command_id: string
+  run_id?: string | null
+  session_id?: string | null
+  agent_instance_id?: string | null
+  branch_name?: string | null
+  route_id?: string | null
+  tool_name: string
+  workdir?: string | null
+  summary: string
+  status: string
+  timestamp?: string | null
+}
+
+export type QuestGovernanceStateVM = {
+  formalBaselineState?: string | null
+  autoPushState?: string | null
+  lastPushStatus?: string | null
+  lastPushAt?: string | null
+  lastPushCommit?: string | null
+  writerConflict?: boolean
+  commitTrust?: string | null
+}
+
+export type QuestSummaryVM = {
+  questAgeSeconds: number
+  activeSpanSeconds: number
+  branchCount: number
+  ideaCount: number
+  experimentCount: number
+  writeCount: number
+  completedCount: number
+  progressingCount: number
+  staleCount: number
+  pushFailedCount: number
+  writerConflictCount: number
+}
+
+export type QuestTopologyVM = {
+  headBranch?: string | null
+  branchCount: number
+  edgeCount: number
+}
+
+export type QuestGovernanceVM = {
+  questId: string
+  title: string
+  topology: QuestTopologyVM
+  runtime: QuestRuntimeVM
+  governance: QuestGovernanceStateVM
+  summary: QuestSummaryVM
+  branches: BranchWorkbenchVM[]
+  continuityVm?: Record<string, unknown> | null
+}
+
+export type LabProjectGovernanceVM = {
+  projectId: string
+  questCount: number
+  pendingDecisionCount: number
+  runningBranchCount: number
+  pushFailedCount: number
+  writerConflictCount: number
+}
+
+export type LabGraphVM = {
+  project: LabProjectGovernanceVM
+  quests: QuestGovernanceVM[]
+}
+
+export type LabQuestSelectionContext = {
+  selection_type: string
+  selection_ref: string
+  quest_id: string
+  branch_name?: string | null
+  stage_key?: string | null
+  edge_id?: string | null
+  agent_instance_id?: string | null
+  worktree_rel_path?: string | null
+  trace_node_id?: string | null
+}
+
+export type LabQuestNodeTraceAction = QuestNodeTraceAction
+export type LabQuestNodeTrace = QuestNodeTrace
+export type LabQuestNodeTraceListResponse = QuestNodeTraceListPayload
+export type LabQuestNodeTraceResponse = QuestNodeTraceDetailPayload
+
+export type LabQuestGraphAction = {
+  proposal_id: string
+  action_type: string
+  status:
+    | 'submitted'
+    | 'acknowledged'
+    | 'accepted'
+    | 'rejected'
+    | 'executed'
+    | 'cancelled'
+    | 'stale'
+    | string
+  quest_id: string
+  selection_ref: string
+  branch_name?: string | null
+  target_agent_instance_ids?: string[] | null
+  payload: Record<string, unknown>
+  selection_context?: LabQuestSelectionContext | null
+  user_prompt?: string | null
+  generated_prompt?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type LabQuestGraphEdge = {
+  edge_id?: string | null
+  source: string
+  target: string
+  edge_type?: string | null
+}
+
+export type LabQuestGraphResponse = {
+  view: 'branch' | 'event' | 'stage'
+  nodes: LabQuestGraphNode[]
+  edges: LabQuestGraphEdge[]
+  head_branch?: string | null
+  layout_json?: Record<string, unknown> | null
+  metric_catalog?: LabMetricObjective[] | null
+  governance_vm?: QuestGovernanceVM | null
+  overlay_actions?: LabQuestGraphAction[] | null
+}
+
+export type LabQuestDiffFile = {
+  path: string
+  status?: string | null
+  additions?: string | null
+  deletions?: string | null
+}
+
+export type LabQuestDiffResponse = {
+  files: LabQuestDiffFile[]
+  next_cursor?: number | null
+  has_more?: boolean
+}
+
+export type LabQuestDiffHunk = {
+  header: string
+  lines: string[]
+}
+
+export type LabQuestDiffFileResponse = {
+  path: string
+  hunks: LabQuestDiffHunk[]
+  next_hunk_cursor?: number | null
+  has_more?: boolean
+  truncated?: boolean | null
+  base_content?: string | null
+  branch_content?: string | null
+  content_truncated?: boolean | null
+}
+
+export type LabQuestGitFileResponse = {
+  path: string
+  content?: string | null
+  size?: number
+  truncated?: boolean
+  ref?: string | null
+}
+
+export type LabQuestGitCommitItem = {
+  commit_hash: string
+  short_hash?: string | null
+  parents?: string[]
+  title?: string | null
+  author?: string | null
+  committed_at?: string | null
+}
+
+export type LabQuestGitCommitListResponse = {
+  items: LabQuestGitCommitItem[]
+  next_cursor?: number | null
+  has_more?: boolean
+}
+
+export type LabQuestGitMergeRequest = {
+  source_branch: string
+  target_branch?: string
+  message?: string | null
+  ff_only?: boolean
+}
+
+export type LabQuestGitMergeResponse = {
+  source_branch: string
+  target_branch: string
+  previous_head: string
+  merge_commit: string
+  fast_forward?: boolean
+  head_branch?: string | null
+}
+
+export type LabQuestGitRevertRequest = {
+  commit_hash: string
+  branch?: string
+  message?: string | null
+}
+
+export type LabQuestGitRevertResponse = {
+  branch: string
+  reverted_commit: string
+  previous_head: string
+  revert_commit: string
+  head_branch?: string | null
+  action_id?: string | null
+  action_status?: string | null
+  push_status?: string | null
+  incident_ids?: string[] | null
+  reconciliation_ids?: string[] | null
+}
+
+export type LabQuestGitBundleExportRequest = {
+  branch_name?: string | null
+  source_ref?: string | null
+}
+
+export type LabQuestGitBundleExportResponse = {
+  action_id?: string | null
+  action_status?: string | null
+  export?: LabQuestGitExport | null
+  result: Record<string, unknown>
+}
+
+export type LabQuestGitBundleRestoreRequest = {
+  export_id: string
+}
+
+export type LabQuestGitBundleRestoreResponse = {
+  action_id?: string | null
+  action_status?: string | null
+  export?: LabQuestGitExport | null
+  result: Record<string, unknown>
+}
+
+export type LabQuestGitReconcileRequest = {
+  branch_name?: string | null
+  reason?: string | null
+  related_incident_id?: string | null
+}
+
+export type LabQuestGitReconcileResponse = {
+  action_id?: string | null
+  action_status?: string | null
+  reconciliation?: LabQuestGitReconciliation | null
+  result: Record<string, unknown>
+}
+
+export type LabQuestGitIncident = {
+  incident_id: string
+  project_id: string
+  quest_id: string
+  related_action_id?: string | null
+  source_cli_server_id?: string | null
+  incident_type: string
+  severity: string
+  status: string
+  branch_name?: string | null
+  title?: string | null
+  message?: string | null
+  details?: Record<string, unknown> | null
+  acknowledged_at?: string | null
+  resolved_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type LabQuestGitIncidentListResponse = {
+  items: LabQuestGitIncident[]
+}
+
+export type LabQuestWorktreeLease = {
+  lease_id: string
+  project_id: string
+  quest_id: string
+  source_cli_server_id?: string | null
+  branch_name: string
+  worktree_rel_path: string
+  agent_instance_id: string
+  template_key?: string | null
+  stage_key?: string | null
+  status: string
+  resource_policy?: string | null
+  resource_hint?: string | null
+  gpu_allocation?: Record<string, unknown> | null
+  metadata?: Record<string, unknown> | null
+  last_heartbeat_at?: string | null
+  expires_at?: string | null
+  released_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type LabQuestWorktreeLeaseListResponse = {
+  items: LabQuestWorktreeLease[]
+}
+
+export type LabQuestGitExport = {
+  export_id: string
+  project_id: string
+  quest_id: string
+  related_action_id?: string | null
+  source_cli_server_id?: string | null
+  restored_from_export_id?: string | null
+  export_type: string
+  status: string
+  branch_name?: string | null
+  source_ref?: string | null
+  archive_path?: string | null
+  checksum_sha256?: string | null
+  manifest?: Record<string, unknown> | null
+  result?: Record<string, unknown> | null
+  completed_at?: string | null
+  restored_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type LabQuestGitExportListResponse = {
+  items: LabQuestGitExport[]
+}
+
+export type LabQuestGitReconciliation = {
+  reconciliation_id: string
+  project_id: string
+  quest_id: string
+  related_action_id?: string | null
+  related_incident_id?: string | null
+  source_cli_server_id?: string | null
+  branch_name?: string | null
+  status: string
+  reason?: string | null
+  local_state?: Record<string, unknown> | null
+  db_state?: Record<string, unknown> | null
+  remote_state?: Record<string, unknown> | null
+  result?: Record<string, unknown> | null
+  acknowledged_at?: string | null
+  resolved_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type LabQuestGitReconciliationListResponse = {
+  items: LabQuestGitReconciliation[]
+}
+
+export type LabQuestEventItem = {
+  event_id: string
+  event_type: string
+  branch_name?: string | null
+  stage_key?: string | null
+  commit_hash?: string | null
+  payload_summary?: string | null
+  reply_to_pi?: string | null
+  payload_hash?: string | null
+  payload_path?: string | null
+  payload_truncated?: boolean | null
+  validation_status?: string | null
+  validation_errors?: unknown
+  created_at?: string | null
+  payload_json?: Record<string, unknown> | null
+}
+
+export type LabQuestEventListResponse = {
+  items: LabQuestEventItem[]
+  next_cursor?: string | null
+  has_more?: boolean
+}
+
+export type LabQuestSearchItem = {
+  item_type: 'event' | 'branch'
+  event?: LabQuestEventItem | null
+  branch?: LabQuestGraphNode | null
+}
+
+export type LabQuestSearchResponse = {
+  items: LabQuestSearchItem[]
+  next_cursor?: string | null
+  has_more?: boolean
+  total_estimate?: number | null
+}
+
+export type LabQuestSnapshotResponse = {
+  snapshot_md: string
+  source?: string | null
+}
+
+export type LabQuestSyncStatus = {
+  quest_id: string
+  events_total: number
+  last_event_id?: string | null
+  last_event_commit?: string | null
+  cli_server_id?: string | null
+  pi_state?: string | null
+  runtime?: Record<string, unknown> | null
+}
+
+export type LabMemorySyncStatus = {
+  pending_count: number
+  failed_count: number
+  last_error?: string | null
+  last_synced_at?: string | null
+  updated_at?: string | null
+  cli_server_id?: string | null
+  cli_status?: string | null
+  cli_last_seen_at?: string | null
+}
+
+export type LabPiControlRequest = {
+  action: 'pause' | 'resume' | 'stop'
+  reason?: string | null
+  force_kill?: boolean | null
+}
+
+export type LabPiControlResponse = {
+  success: boolean
+  action: string
+  pi_state?: string | null
+  event_id?: string | null
+  commit_hash?: string | null
+  state_unchanged?: boolean | null
+  force_kill?: boolean | null
+  stopped_session_ids?: string[] | null
+  stopped_sessions_count?: number | null
+  error?: string | null
+}
+
+export type LabQuestEventPayloadResponse = {
+  event_id: string
+  payload_json?: Record<string, unknown> | null
+  payload_hash?: string | null
+  payload_path?: string | null
+  truncated?: boolean | null
+  source?: string | null
+  available?: boolean | null
+}
+
+export type LabBaselineResult = {
+  baseline_run_id?: string | null
+  run_id: string
+  status?: string | null
+  metrics_json?: Record<string, unknown> | null
+  summary_path?: string | null
+  run_manifest_path?: string | null
+  dataset_refs?: unknown
+  external_refs?: unknown
+  baseline_commit?: string | null
+  source_cli_server_id?: string | null
+  updated_at?: string | null
+  created_at?: string | null
+}
+
+export type LabBaselineResultsResponse = {
+  baseline_root_id: string
+  items: LabBaselineResult[]
+  next_cursor?: string | null
+  metric_objectives?: LabMetricObjective[] | null
+}
+
+export type LabQuestLayoutResponse = {
+  layout_json?: Record<string, unknown> | null
+  updated_at?: string | null
+}
+
+export type LabQuestArtifactContent = {
+  path: string
+  content?: string | null
+  encoding?: string | null
+  size?: number | null
+  content_hash?: string | null
+  content_type?: string | null
+  source?: string | null
+  available?: boolean
+}
+
+export type LabQuestDeleteResponse = {
+  quest_id: string
+  deleted: boolean
+}
+
+export type LabQuestGithubPushStatus = {
+  configured: boolean
+  prerequisites: Record<string, boolean>
+  disabled_reason?: string | null
+  binding?: Record<string, unknown> | null
+}
+
+export type LabGithubPushDefaultStatus = {
+  auto_push_default_enabled: boolean
+  prerequisites: Record<string, boolean>
+  disabled_reason?: string | null
+}
+
+export type LabQuestGithubPushCredential = {
+  success: boolean
+  token?: string | null
+  expires_at?: string | null
+  repo_full_name?: string | null
+  repo_owner?: string | null
+  repo_name?: string | null
+  repo_html_url?: string | null
+  default_branch?: string | null
+  auto_push_effective_enabled?: boolean
+  reason?: string | null
+}
+
+export type LabMoment = {
+  moment_id: string
+  project_id: string
+  agent_instance_id?: string | null
+  session_id?: string | null
+  quest_id?: string | null
+  quest_node_id?: string | null
+  status_json?: Record<string, unknown> | null
+  media_json?: Record<string, unknown> | null
+  importance?: string | null
+  like_count?: number | null
+  comment_count?: number | null
+  created_at?: string | null
+  source_ts?: string | null
+  content?: string | null
+}
+
+export type LabMomentComment = {
+  comment_id: string
+  moment_id: string
+  user_id: string
+  content: string
+  created_at?: string | null
+}
+
+export type LabMomentsResponse = {
+  items: LabMoment[]
+  next_cursor?: string | null
+}
+
+export type LabLikeResponse = {
+  like_count: number
+}
+
+export type LabMomentCommentResponse = {
+  comment: LabMomentComment
+}
+
+export type LabOverview = {
+  agents?: Record<string, unknown> | null
+  quests?: Record<string, unknown> | null
+  assets?: Record<string, unknown> | null
+  achievements?: Record<string, unknown> | null
+  recent_activity?: Array<Record<string, unknown>> | null
+  github_push?: Record<string, unknown> | null
+  graph_vm?: LabGraphVM | null
+}
+
+export type LabQuestTimelineEntry = {
+  event_id: string
+  event_type: string
+  branch_name?: string | null
+  created_at?: string | null
+  payload_summary?: string | null
+  source?: string | null
+  source_ref?: string | null
+  origin_event_id?: string | null
+  origin_commit_hash?: string | null
+  authority_level?: string | null
+}
+
+export type LabQuestTimelineResponse = {
+  items: LabQuestTimelineEntry[]
+}
+
+export type LabQuestCompareSeries = {
+  label: string
+  points: Array<Record<string, unknown>>
+}
+
+export type LabQuestCompareResponse = {
+  baseline_branch?: string | null
+  head_branch?: string | null
+  selected_branch?: string | null
+  metric_table: Record<string, unknown>
+  series: LabQuestCompareSeries[]
+  key_findings: string[]
+  git_diff: Array<Record<string, unknown>>
+  artifact_diff: Array<Record<string, unknown>>
+}
+
+export type LabQuestAuditArtifact = {
+  path: string
+  available: boolean
+  content_type?: string | null
+  content_hash?: string | null
+  size?: number | null
+  preview?: string | null
+  truncated?: boolean
+}
+
+export type LabQuestRunAuditClaim = {
+  claim_id?: string | null
+  statement?: string | null
+  section?: string | null
+  figure?: string | null
+  table?: string | null
+  verdict?: string | null
+}
+
+export type LabQuestRunAuditResponse = {
+  quest_id: string
+  run_id: string
+  branch_name?: string | null
+  event_id?: string | null
+  stage_key?: string | null
+  status?: string | null
+  created_at?: string | null
+  audit_level?: string | null
+  audit_score: number
+  validation_status?: string | null
+  validation_errors?: unknown
+  missing_artifacts: string[]
+  run: Record<string, unknown>
+  idea: Record<string, unknown>
+  decision: Record<string, unknown>
+  code: Record<string, unknown>
+  command: Record<string, unknown>
+  logs: Record<string, unknown>
+  result: Record<string, unknown>
+  claims: LabQuestRunAuditClaim[]
+  related_memory: Array<Record<string, unknown>>
+}
+
+export type LabQuestBranchAuditResponse = {
+  quest_id: string
+  branch_name: string
+  head_branch?: string | null
+  parent_branch?: string | null
+  latest_commit?: string | null
+  stage?: string | null
+  audit_level?: string | null
+  branch_summary: Record<string, unknown>
+  idea: Record<string, unknown>
+  diff: Record<string, unknown>
+  experiments: Array<Record<string, unknown>>
+  decisions: Array<Record<string, unknown>>
+  related_memory: Array<Record<string, unknown>>
+  claim_map_path?: string | null
+  bundle_manifest_path?: string | null
+  compare_context: Record<string, unknown>
+}
+
+export type LabQuestSummaryResponse = {
+  quest: QuestGovernanceVM
+}
+
+export type LabQuestRuntimeResponse = {
+  quest_id: string
+  runtime: QuestRuntimeVM
+  scheduler: LabQuestRuntimeScheduler
+  active_runs: LabQuestRuntimeRun[]
+  routes: LabQuestRuntimeRoute[]
+  recent_commands: LabQuestRuntimeCommand[]
+  worktree_leases: LabQuestWorktreeLease[]
+}
+
+export type LabQuestGraphActionListResponse = {
+  items: LabQuestGraphAction[]
+}
+
+export type LabQuestGraphActionResponse = {
+  action: LabQuestGraphAction
+}
+
+export type LabQuestAgentGroupMessageCreateResponse = {
+  group_message_id: string
+  dispatch_count: number
+}
+
+export type LabPendingQuestion = {
+  tool_call_id: string
+  session_id: string
+  agent_instance_id?: string | null
+  agent_display_name?: string | null
+  agent_label?: string | null
+  question_set: Record<string, unknown>
+  created_at?: string | null
+}
+
+export type LabPendingQuestionListResponse = {
+  items: LabPendingQuestion[]
+  total: number
+}
+
+export type LabQuestionHistoryItem = {
+  tool_call_id: string
+  session_id: string
+  agent_instance_id?: string | null
+  agent_display_name?: string | null
+  agent_label?: string | null
+  question_set: Record<string, unknown>
+  answers?: Record<string, unknown> | null
+  summary?: string | null
+  answered_at?: string | null
+}
+
+export type LabQuestionHistoryResponse = {
+  items: LabQuestionHistoryItem[]
+  next_cursor?: string | null
+}
+
+export type LabAchievementDefinition = {
+  key: string
+  title: string
+  description?: string | null
+  trigger_event?: string | null
+  category?: string | null
+  icon?: string | null
+}
+
+export type LabAchievement = {
+  id: string
+  key: string
+  unlocked_at?: string | null
+  unlocked_by_agent_instance_id?: string | null
+  metadata_json?: Record<string, unknown> | null
+}
+
+export type LabBaseline = {
+  baseline_root_id: string
+  title?: string | null
+  status?: string | null
+  last_reproduced_at?: string | null
+  archive_file_id?: string | null
+}
+
+export type LabPaperVersionSummary = {
+  paper_version_id: string
+  version_index?: number | null
+  status?: string | null
+  created_at?: string | null
+  archive_file_id?: string | null
+  main_tex_path?: string | null
+  main_tex_file_id?: string | null
+  archive_error_code?: string | null
+  archive_error_detail?: string | null
+}
+
+export type LabPaper = {
+  paper_root_id: string
+  quest_id?: string | null
+  title?: string | null
+  status?: string | null
+  folder_name?: string | null
+  root_path?: string | null
+  latest_version?: LabPaperVersionSummary | null
+}
+
+export type LabPaperDetail = LabPaper & {
+  project_id?: string | null
+  metadata_json?: Record<string, unknown> | null
+  versions?: LabPaperVersionSummary[]
+}
+
+export type LabMemoryEntry = {
+  entry_id: string
+  kind: string
+  title?: string | null
+  summary?: string | null
+  severity?: string | null
+  quest_id?: string | null
+  branch_name?: string | null
+  stage_key?: string | null
+  worktree_rel_path?: string | null
+  origin_event_id?: string | null
+  origin_event_type?: string | null
+  origin_commit_hash?: string | null
+  agent_instance_id?: string | null
+  idea_id?: string | null
+  run_id?: string | null
+  occurred_at?: string | null
+  artifact_paths?: string[] | null
+  evidence_refs?: unknown[] | null
+  authority_level?: string | null
+  review_status?: string | null
+  tags?: string[] | null
+  confidence?: number | null
+  content_md?: string | null
+  content_hash?: string | null
+  source_path?: string | null
+  deleted_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type LabMemoryListResponse = {
+  items: LabMemoryEntry[]
+}
+
+export type LabAssetContent = {
+  path: string
+  content: string
+  encoding: string
+  size: number
+  modified_at?: string | null
+  truncated?: boolean
+}
+
+const LOCAL_LAB_TEMPLATE_CATALOG: LabTemplate[] = [
+  {
+    template_id: 'local-principal-investigator',
+    template_key: 'principal-investigator',
+    name: 'Principal Investigator',
+    label: 'PI',
+    role: 'lead',
+    purpose: 'Drive the quest, make decisions, and keep the evidence coherent.',
+    description: 'Local DeepScientist PI agent for quest planning, branching, and milestone decisions.',
+    prompt_scope: 'quest',
+    agent_engine: 'codex',
+    execution_target: 'local',
+    default_skills: ['scout', 'idea', 'decision', 'experiment', 'analysis-campaign', 'write', 'finalize'],
+    typical_dod: 'Produces durable artifacts, explicit decisions, and a clear next action.',
+    init_question: 'What is the best next research step for this quest?',
+    init_answer: 'Inspect the latest artifact, compare against the active baseline, then decide whether to branch, run, analyse, or write.',
+    mcp_servers: ['memory', 'artifact'],
+  },
+]
+
+function nowIso() {
+  return new Date().toISOString()
+}
+
+function normalizeTimestamp(value?: string | null) {
+  return value && value.trim() ? value : nowIso()
+}
+
+function normalizeLabWorkingStatus(status?: string | null) {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (normalized === 'running' || normalized === 'active' || normalized === 'working') return 'working'
+  if (normalized === 'completed' || normalized === 'done' || normalized === 'finalized') return 'done'
+  if (normalized === 'failed' || normalized === 'blocked' || normalized === 'error') return 'blocked'
+  if (normalized === 'waiting' || normalized === 'paused') return 'waiting'
+  return 'idle'
+}
+
+function resolveStageKey(anchor?: string | null) {
+  const normalized = String(anchor || '').trim().toLowerCase()
+  if (!normalized) return 'decision'
+  if (normalized.includes('scout') || normalized.includes('literature')) return 'scout'
+  if (normalized.includes('idea')) return 'idea'
+  if (normalized.includes('decision')) return 'decision'
+  if (normalized.includes('analysis')) return 'analysis'
+  if (normalized.includes('write') || normalized.includes('paper')) return 'write'
+  if (normalized.includes('final')) return 'finalize'
+  if (normalized.includes('experiment') || normalized.includes('reproduce') || normalized.includes('baseline')) {
+    return 'experiment'
+  }
+  return normalized
+}
+
+function resolveBranchClass(node: GitBranchNode): 'main' | 'idea' | 'analysis' | 'paper' {
+  const branchKind = String(node.branch_kind || '').toLowerCase()
+  const mode = String(node.mode || '').toLowerCase()
+  if (branchKind === 'analysis' || mode === 'analysis') return 'analysis'
+  if (branchKind === 'idea') return 'idea'
+  if (branchKind === 'paper' || branchKind === 'write') return 'paper'
+  return 'main'
+}
+
+function latestMetrics(summary: QuestSummary) {
+  const metric = summary.summary?.latest_metric
+  if (!metric?.key) return null
+  return {
+    [metric.key]: metric.value ?? null,
+  }
+}
+
+function buildLocalQuestNodes(summary: QuestSummary): LabQuestNode[] {
+  const stages = [
+    { key: 'scout', title: 'Scout' },
+    { key: 'idea', title: 'Idea' },
+    { key: 'decision', title: 'Decision' },
+    { key: 'experiment', title: 'Main Experiment' },
+    { key: 'analysis', title: 'Analysis' },
+    { key: 'write', title: 'Write' },
+    { key: 'finalize', title: 'Finalize' },
+  ]
+  const currentKey = resolveStageKey(summary.active_anchor)
+  const currentIndex = Math.max(
+    0,
+    stages.findIndex((stage) => stage.key === currentKey)
+  )
+
+  return stages.map((stage, index) => ({
+    node_id: `${summary.quest_id}:${stage.key}`,
+    quest_id: summary.quest_id,
+    node_key: stage.key,
+    title: stage.title,
+    status: index < currentIndex ? 'done' : index === currentIndex ? 'running' : 'pending',
+    position: index,
+    report_md: index === currentIndex ? summary.summary?.status_line ?? '' : '',
+    report_updated_at: normalizeTimestamp(summary.updated_at),
+  }))
+}
+
+function buildLocalBranchWorkbench(summary: QuestSummary, branches?: GitBranchesPayload | null): BranchWorkbenchVM[] {
+  if (!branches?.nodes?.length) {
+    return [
+      {
+        branchName: summary.branch || 'main',
+        branchClass: 'main',
+        isHead: true,
+        stage: resolveStageKey(summary.active_anchor),
+        nowDoing: summary.summary?.status_line ?? null,
+        latestMetrics: latestMetrics(summary),
+      },
+    ]
+  }
+
+  return branches.nodes.map((node) => ({
+    branchName: node.ref,
+    branchClass: resolveBranchClass(node),
+    parentBranch: node.parent_ref ?? null,
+    worktreeRelPath: node.worktree_root ?? null,
+    isHead: Boolean(node.current),
+    stage: node.run_kind ?? resolveStageKey(summary.active_anchor),
+    nowDoing: node.latest_summary ?? node.subject ?? null,
+    latestMetrics: node.latest_metric?.key
+      ? { [node.latest_metric.key]: node.latest_metric.value ?? null }
+      : null,
+  }))
+}
+
+function buildLocalGovernanceVm(summary: QuestSummary, branches?: GitBranchesPayload | null): QuestGovernanceVM {
+  const branchCount = branches?.nodes?.length ?? 1
+  const analysisCount = Number(summary.counts?.analysis_run_count || 0)
+  const pendingDecisionCount = summary.pending_decisions?.length ?? 0
+  const runtimeActive = normalizeLabWorkingStatus(summary.status) === 'working' ? 1 : 0
+  const guidance = (summary.guidance ?? null) as GuidanceVm | null
+
+  return {
+    questId: summary.quest_id,
+    title: summary.title || summary.quest_id,
+    topology: {
+      headBranch: summary.branch || 'main',
+      branchCount,
+      edgeCount: branches?.edges?.length ?? 0,
+    },
+    runtime: {
+      runningAgents: runtimeActive,
+      runningPiAgents: runtimeActive,
+      runningWorkerAgents: 0,
+      lastHeartbeatAt: normalizeTimestamp(summary.updated_at),
+      piState: summary.status,
+      parallelLimit: Math.max(1, analysisCount || 1),
+      activeSlots: runtimeActive,
+      availableSlots: Math.max(0, Math.max(1, analysisCount || 1) - runtimeActive),
+      blockedReasons: pendingDecisionCount > 0 ? ['pending_decision'] : [],
+      cliStatus: 'online',
+      cliLastSeenAt: normalizeTimestamp(summary.updated_at),
+    },
+    governance: {
+      formalBaselineState: 'tracked',
+      autoPushState: 'disabled',
+      lastPushStatus: 'local_only',
+      writerConflict: false,
+      commitTrust: 'local',
+    },
+    summary: {
+      questAgeSeconds: 0,
+      activeSpanSeconds: 0,
+      branchCount,
+      ideaCount: branchCount,
+      experimentCount: analysisCount,
+      writeCount: 0,
+      completedCount: normalizeLabWorkingStatus(summary.status) === 'done' ? 1 : 0,
+      progressingCount: runtimeActive,
+      staleCount: 0,
+      pushFailedCount: 0,
+      writerConflictCount: 0,
+    },
+    branches: buildLocalBranchWorkbench(summary, branches),
+    continuityVm: guidance
+      ? {
+          currentAnchor: guidance.current_anchor,
+          recommendedSkill: guidance.recommended_skill,
+          recommendedAction: guidance.recommended_action,
+          summary: guidance.summary,
+          whyNow: guidance.why_now,
+          completeWhen: guidance.complete_when || [],
+          alternativeRoutes: guidance.alternative_routes || [],
+          suggestedArtifactCalls: guidance.suggested_artifact_calls || [],
+          requiresUserDecision: Boolean(guidance.requires_user_decision),
+          pendingInteractionId: guidance.pending_interaction_id ?? null,
+          stageStatus: guidance.stage_status ?? null,
+          sourceArtifactKind: guidance.source_artifact_kind ?? null,
+          sourceArtifactId: guidance.source_artifact_id ?? null,
+          relatedPaths: guidance.related_paths || [],
+        }
+      : null,
+  }
+}
+
+function buildLocalRecentActivity(summary: QuestSummary): Array<Record<string, unknown>> {
+  const items: Array<Record<string, unknown>> = []
+
+  for (const run of summary.recent_runs || []) {
+    items.push({
+      title: run.summary || run.skill_id || 'Run updated',
+      created_at: normalizeTimestamp(run.updated_at || run.created_at),
+      ts: normalizeTimestamp(run.updated_at || run.created_at),
+      source: 'run',
+      run_id: run.run_id,
+      agent_instance_id: `${summary.quest_id}:pi`,
+    })
+  }
+
+  for (const artifact of summary.recent_artifacts || []) {
+    items.push({
+      title:
+        artifact.payload?.summary ||
+        artifact.payload?.reason ||
+        artifact.payload?.artifact_id ||
+        artifact.kind ||
+        'Artifact updated',
+      created_at: normalizeTimestamp(artifact.payload?.updated_at || summary.updated_at),
+      ts: normalizeTimestamp(artifact.payload?.updated_at || summary.updated_at),
+      source: 'artifact',
+      agent_instance_id: `${summary.quest_id}:pi`,
+    })
+  }
+
+  return items
+    .sort((left, right) => String(right.created_at || '').localeCompare(String(left.created_at || '')))
+    .slice(0, 20)
+}
+
+function buildLocalTemplatePools(): LabPromptPool[] {
+  return LOCAL_LAB_TEMPLATE_CATALOG.map((template) => ({
+    template_id: template.template_id,
+    template_key: template.template_key,
+    name_prompts: [template.name],
+    capability_prompts: [template.purpose || template.description || 'Research orchestration'],
+    strength_prompts: ['Precise', 'Auditable', 'Local-first'],
+    motto_prompts: ['Think clearly, write durably, branch only with evidence.'],
+  }))
+}
+
+function mapQuestSummaryToLabQuest(summary: QuestSummary, branches?: GitBranchesPayload | null): LabQuest {
+  const governanceVm = buildLocalGovernanceVm(summary, branches)
+  return {
+    quest_id: summary.quest_id,
+    title: summary.title || summary.quest_id,
+    summary: summary.summary?.status_line || null,
+    status: summary.status || 'idle',
+    description: summary.summary?.status_line || null,
+    tags: summary.branch ? [summary.branch] : null,
+    baseline_root_id: summary.branch ? `${summary.quest_id}:baseline` : null,
+    pi_agent_instance_id: `${summary.quest_id}:pi`,
+    pi_state: summary.status || 'idle',
+    cli_server_id: `local:${summary.quest_id}`,
+    git_head_branch: summary.branch || 'main',
+    last_event_at: normalizeTimestamp(summary.updated_at),
+    pending_question_count: summary.pending_decisions?.length ?? 0,
+    github_push_default_enabled: false,
+    github_push: {
+      enabled: false,
+      mode: 'local_only',
+    },
+    runtime: governanceVm.runtime,
+    governance: governanceVm.governance,
+    summary_vm: governanceVm.summary,
+    created_at: normalizeTimestamp(summary.updated_at),
+  }
+}
+
+function mapQuestSummaryToLabAgent(summary: QuestSummary): LabAgentInstance {
+  return {
+    instance_id: `${summary.quest_id}:pi`,
+    agent_id: `${summary.quest_id}:pi`,
+    mention_label: 'pi',
+    display_name: 'Dr-PIer',
+    template_id: 'local-principal-investigator',
+    status: normalizeLabWorkingStatus(summary.status),
+    stats_json: {
+      artifacts: Number(summary.counts?.artifacts || 0),
+      memories: Number(summary.counts?.memory_cards || 0),
+      analysis: Number(summary.counts?.analysis_run_count || 0),
+    },
+    profile_md: summary.summary?.status_line || null,
+    profile_json: {
+      quest_root: summary.quest_root || null,
+      branch: summary.branch || 'main',
+    },
+    avatar_frame_color: '#8FA3B8',
+    avatar_logo: null,
+    direct_session_id: `quest:${summary.quest_id}`,
+    active_quest_id: summary.quest_id,
+    active_quest_branch: summary.branch || 'main',
+    active_quest_stage_key: resolveStageKey(summary.active_anchor),
+    cli_server_id: `local:${summary.quest_id}`,
+    status_updated_at: normalizeTimestamp(summary.updated_at),
+    created_at: normalizeTimestamp(summary.updated_at),
+  }
+}
+
+function mapGitNodeToLabQuestGraphNode(questId: string, summary: QuestSummary, node: GitBranchNode): LabQuestGraphNode {
+  const metrics =
+    node.latest_metric?.key
+      ? { [node.latest_metric.key]: node.latest_metric.value ?? null }
+      : latestMetrics(summary)
+
+  return {
+    node_id: node.ref,
+    branch_name: node.ref,
+    parent_branch: node.parent_ref ?? null,
+    branch_class: resolveBranchClass(node),
+    worktree_rel_path: node.worktree_root ?? null,
+    latest_commit: node.head ?? null,
+    status: node.current ? 'active' : 'ready',
+    idea_id: node.idea_id ?? null,
+    metrics_json: metrics,
+    verdict: node.latest_summary ?? null,
+    claim_verdict: null,
+    go_decision: null,
+    created_at: normalizeTimestamp(node.updated_at || summary.updated_at),
+    stage_key: node.run_kind ?? resolveStageKey(summary.active_anchor),
+    stage_title: node.branch_kind || null,
+    event_ids: [],
+    event_count: node.commit_count ?? 0,
+    baseline_state: 'tracked',
+    runtime_state: node.current ? normalizeLabWorkingStatus(summary.status) : 'idle',
+    target_label: node.label,
+    node_summary: {
+      last_event_type: node.run_kind ?? node.branch_kind ?? null,
+      last_reply: node.latest_summary ?? node.subject ?? null,
+      latest_metrics: metrics,
+      trend_preview: null,
+      claim_verdict: null,
+      go_decision: null,
+    },
+  }
+}
+
+function buildFallbackGraphNode(summary: QuestSummary): LabQuestGraphNode {
+  return {
+    node_id: summary.branch || 'main',
+    branch_name: summary.branch || 'main',
+    parent_branch: null,
+    branch_class: 'main',
+    worktree_rel_path: null,
+    latest_commit: summary.head || null,
+    status: 'active',
+    metrics_json: latestMetrics(summary),
+    verdict: summary.summary?.status_line ?? null,
+    created_at: normalizeTimestamp(summary.updated_at),
+    stage_key: resolveStageKey(summary.active_anchor),
+    stage_title: 'Quest',
+    event_ids: [],
+    event_count: Number(summary.counts?.artifacts || 0),
+    baseline_state: 'tracked',
+    runtime_state: normalizeLabWorkingStatus(summary.status),
+    target_label: summary.title || summary.quest_id,
+    node_summary: {
+      last_event_type: resolveStageKey(summary.active_anchor),
+      last_reply: summary.summary?.status_line ?? null,
+      latest_metrics: latestMetrics(summary),
+      trend_preview: null,
+      claim_verdict: null,
+      go_decision: null,
+    },
+  }
+}
+
+function traceMatchesSearch(trace: LabQuestNodeTrace, query?: string | null): boolean {
+  const normalized = String(query || '').trim().toLowerCase()
+  if (!normalized) return true
+  const haystack = [
+    trace.selection_ref,
+    trace.title,
+    trace.summary,
+    trace.branch_name,
+    trace.stage_key,
+    trace.stage_title,
+    ...(trace.actions ?? []).flatMap((action) => [
+      action.title,
+      action.summary,
+      action.raw_event_type,
+      action.tool_name,
+      action.args,
+      action.output,
+    ]),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return haystack.includes(normalized)
+}
+
+function mapTraceToGraphNode(
+  trace: LabQuestNodeTrace,
+  summary: QuestSummary,
+  view: 'event' | 'stage'
+): LabQuestGraphNode {
+  const lastAction = trace.actions[trace.actions.length - 1] ?? null
+  const branchName = trace.branch_name || summary.branch || 'main'
+  const status =
+    trace.status ||
+    lastAction?.raw_event_type ||
+    lastAction?.kind ||
+    (view === 'stage' ? trace.stage_key : 'event')
+  const actionIds = trace.actions
+    .map((action) => String(action.action_id || '').trim())
+    .filter((actionId): actionId is string => Boolean(actionId))
+  return {
+    node_id: trace.selection_ref,
+    branch_name: branchName,
+    parent_branch: null,
+    branch_class: branchName === 'main' ? 'main' : branchName.startsWith('analysis/') ? 'analysis' : null,
+    worktree_rel_path: trace.worktree_rel_path || null,
+    latest_commit: null,
+    status,
+    idea_id: null,
+    idea_json: null,
+    metrics_json: null,
+    verdict: null,
+    claim_verdict: null,
+    go_decision: null,
+    created_at: trace.updated_at || null,
+    stage_key: trace.stage_key || null,
+    stage_title: trace.stage_title || null,
+    event_ids: actionIds,
+    event_count: trace.counts?.actions ?? actionIds.length,
+    baseline_state: null,
+    push_state: null,
+    writer_state: null,
+    runtime_state: null,
+    protected_state: null,
+    divergence_state: null,
+    reconcile_state: null,
+    proof_state: null,
+    submission_state: null,
+    retire_state: null,
+    claim_evidence_state: null,
+    commit_trust: null,
+    target_label: trace.title,
+    node_summary: {
+      last_event_type: lastAction?.raw_event_type || lastAction?.kind || null,
+      last_reply: trace.summary || lastAction?.summary || null,
+      last_error:
+        String(lastAction?.status || '').toLowerCase().includes('fail') ||
+        String(lastAction?.status || '').toLowerCase().includes('error')
+          ? trace.summary || lastAction?.summary || lastAction?.output || null
+          : null,
+      metrics_delta: null,
+      latest_metrics: null,
+      trend_preview: null,
+      metric_curves: null,
+      claim_verdict: null,
+      go_decision: null,
+    },
+  }
+}
+
+function buildTraceEdges(
+  traces: LabQuestNodeTrace[],
+  view: 'event' | 'stage'
+): LabQuestGraphEdge[] {
+  const grouped = new Map<string, LabQuestNodeTrace[]>()
+  traces.forEach((trace) => {
+    const branchName = trace.branch_name || 'main'
+    const items = grouped.get(branchName) ?? []
+    items.push(trace)
+    grouped.set(branchName, items)
+  })
+  const edges: LabQuestGraphEdge[] = []
+  grouped.forEach((items, branchName) => {
+    const ordered = [...items].sort((left, right) =>
+      String(left.updated_at || '').localeCompare(String(right.updated_at || ''))
+    )
+    ordered.forEach((item, index) => {
+      if (index === 0) return
+      const previous = ordered[index - 1]
+      edges.push({
+        edge_id: `${view}:${branchName}:${previous.selection_ref}:${item.selection_ref}`,
+        source: previous.selection_ref,
+        target: item.selection_ref,
+        edge_type: view === 'stage' ? 'stage' : 'sequence',
+      })
+    })
+  })
+  return edges
+}
+
+function buildLocalQuestGraphResponse(
+  summary: QuestSummary,
+  branches: GitBranchesPayload | null,
+  _workflow: WorkflowPayload | null,
+  params?: { view?: 'branch' | 'event' | 'stage'; search?: string; atEventId?: string | null },
+  nodeTraces?: LabQuestNodeTraceListResponse | null
+): LabQuestGraphResponse {
+  const view = params?.view ?? 'branch'
+  if (view === 'event' || view === 'stage') {
+    const selectionType = view === 'event' ? 'event_node' : 'stage_node'
+    const traces = (nodeTraces?.items ?? [])
+      .filter((trace) => trace.selection_type === selectionType)
+      .filter((trace) => traceMatchesSearch(trace, params?.search))
+      .sort((left, right) => String(left.updated_at || '').localeCompare(String(right.updated_at || '')))
+    return {
+      view,
+      nodes: traces.map((trace) => mapTraceToGraphNode(trace, summary, view)),
+      edges: buildTraceEdges(traces, view),
+      head_branch: summary.branch || 'main',
+      layout_json: null,
+      metric_catalog: [],
+      governance_vm: buildLocalGovernanceVm(summary, branches),
+      overlay_actions: [],
+    }
+  }
+  return {
+    view,
+    nodes:
+      branches?.nodes?.length
+        ? branches.nodes.map((node) => mapGitNodeToLabQuestGraphNode(summary.quest_id, summary, node))
+        : [buildFallbackGraphNode(summary)],
+    edges:
+      branches?.edges?.map((edge, index) => ({
+        edge_id: `edge:${index}:${edge.from}:${edge.to}`,
+        source: edge.from,
+        target: edge.to,
+        edge_type: edge.relation || 'branch',
+      })) ?? [],
+    head_branch: summary.branch || 'main',
+    layout_json: null,
+    metric_catalog: summary.summary?.latest_metric?.key
+      ? [
+          {
+            key: summary.summary.latest_metric.key,
+            label: summary.summary.latest_metric.key,
+            direction: 'higher',
+            importance: 1,
+          },
+        ]
+      : [],
+    governance_vm: buildLocalGovernanceVm(summary, branches),
+    overlay_actions: [],
+  }
+}
+
+async function loadLocalQuestSummary(projectId: string): Promise<QuestSummary> {
+  const session = await questClient.session(projectId)
+  return session.snapshot as QuestSummary
+}
+
+async function loadLocalQuestWorkflow(projectId: string): Promise<WorkflowPayload | null> {
+  try {
+    return await questClient.workflow(projectId)
+  } catch {
+    return null
+  }
+}
+
+async function loadLocalQuestNodeTraces(
+  projectId: string,
+  selectionType?: string | null
+): Promise<LabQuestNodeTraceListResponse | null> {
+  try {
+    return await questClient.nodeTraces(projectId, selectionType)
+  } catch {
+    return null
+  }
+}
+
+async function loadLocalQuestBranches(projectId: string): Promise<GitBranchesPayload | null> {
+  try {
+    return await questClient.gitBranches(projectId)
+  } catch {
+    return null
+  }
+}
+
+function mapWorkflowEntryToTimeline(entry: WorkflowEntry): LabQuestTimelineEntry {
+  return {
+    event_id: entry.id,
+    event_type: entry.raw_event_type || entry.kind,
+    branch_name: null,
+    created_at: entry.created_at || nowIso(),
+    payload_summary: entry.summary || entry.title,
+    source: entry.kind,
+    source_ref: entry.run_id || null,
+    authority_level: null,
+  }
+}
+
+function mapWorkflowEntryToQuestEvent(entry: WorkflowEntry): LabQuestEventItem {
+  return {
+    event_id: entry.id,
+    event_type: entry.raw_event_type || entry.kind,
+    branch_name: null,
+    stage_key: entry.skill_id || null,
+    payload_summary: entry.summary || entry.title,
+    created_at: entry.created_at || nowIso(),
+    payload_json: {
+      title: entry.title,
+      summary: entry.summary,
+      tool_name: entry.tool_name,
+      status: entry.status,
+      args: entry.args,
+      output: entry.output,
+    },
+  }
+}
+
+function mapMemoryCardKind(card: MemoryCard): string {
+  const type = String(card.type || '').toLowerCase()
+  if (type.includes('incident')) return 'incident'
+  if (type.includes('episode')) return 'episode'
+  return 'knowledge'
+}
+
+function mapMemoryCardToEntry(card: MemoryCard): LabMemoryEntry {
+  return {
+    entry_id: card.document_id || card.path || card.title || crypto.randomUUID(),
+    kind: mapMemoryCardKind(card),
+    title: card.title || card.document_id || 'Memory',
+    summary: card.excerpt || null,
+    source_path: card.path || null,
+    updated_at: nowIso(),
+    created_at: nowIso(),
+  }
+}
+
+async function resolveLocalMemoryEntry(projectId: string, entryId: string): Promise<LabMemoryEntry> {
+  const documentId = entryId.startsWith('memory::') ? entryId : null
+  if (!documentId) {
+    const cards = await questClient.memory(projectId)
+    const matched = cards.find((card) => (card.document_id || card.path || card.title) === entryId)
+    if (matched?.document_id) {
+      return resolveLocalMemoryEntry(projectId, matched.document_id)
+    }
+    return {
+      entry_id: entryId,
+      kind: 'knowledge',
+      title: entryId,
+      summary: null,
+      content_md: null,
+      updated_at: nowIso(),
+      created_at: nowIso(),
+    }
+  }
+
+  const opened = await questClient.openDocument(projectId, documentId)
+  return {
+    entry_id: documentId,
+    kind: 'knowledge',
+    title: opened.title,
+    summary: null,
+    content_md: opened.content,
+    source_path: opened.path || null,
+    updated_at: opened.updated_at || nowIso(),
+    created_at: opened.updated_at || nowIso(),
+  }
+}
+
+export async function listLabTemplates(projectId: string): Promise<LabListResponse<LabTemplate>> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    return { items: LOCAL_LAB_TEMPLATE_CATALOG }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/templates`)
+    return response.data ?? { items: [] }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return { items: LOCAL_LAB_TEMPLATE_CATALOG }
+  }
+}
+
+export async function listLabPromptPools(projectId: string): Promise<LabListResponse<LabPromptPool>> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    return { items: buildLocalTemplatePools() }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/prompt-pools`)
+    return response.data ?? { items: [] }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return { items: buildLocalTemplatePools() }
+  }
+}
+
+export async function listLabAgents(
+  projectId: string,
+  options?: LabRequestOptions
+): Promise<LabListResponse<LabAgentInstance>> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    return { items: [mapQuestSummaryToLabAgent(summary)] }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/agents`, buildLabRequestConfig(options))
+    return response.data ?? { items: [] }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    return { items: [mapQuestSummaryToLabAgent(summary)] }
+  }
+}
+
+export async function createLabAgent(
+  projectId: string,
+  payload: {
+    template_key: string
+    agent_id?: string
+    request_id?: string
+    display_name?: string
+    profile_json?: Record<string, unknown>
+    stats_json?: Record<string, unknown>
+    avatar_frame_color?: string
+    cli_server_id?: string
+  }
+): Promise<{ agent: LabAgentInstance }> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/agents`, payload)
+  return response.data
+}
+
+export async function updateLabAgent(
+  projectId: string,
+  agentInstanceId: string,
+  payload: {
+    display_name?: string
+    mention_label?: string
+    stats_json?: Record<string, unknown>
+    profile_json?: Record<string, unknown>
+    avatar_frame_color?: string
+    cli_server_id?: string
+  }
+): Promise<{ agent: LabAgentInstance }> {
+  const response = await apiClient.patch(`${LAB_BASE(projectId)}/agents/${agentInstanceId}`, payload)
+  return response.data
+}
+
+export async function assignLabAgent(
+  projectId: string,
+  agentInstanceId: string,
+  payload: { quest_id?: string | null; quest_node_id?: string | null }
+): Promise<{ agent: LabAgentInstance }> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/agents/${agentInstanceId}/assign`, payload)
+  return response.data
+}
+
+export async function getLabAgentDirectSession(
+  projectId: string,
+  agentInstanceId: string
+): Promise<{ session_id: string; created: boolean }> {
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/agents/${agentInstanceId}/direct-session`)
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return {
+      session_id: `quest:${projectId}`,
+      created: false,
+    }
+  }
+}
+
+export type LabSurfaceSession = {
+  session_id: string
+  surface: 'group' | 'friends'
+}
+
+export async function getLabGroupSession(
+  projectId: string,
+  questId: string
+): Promise<LabSurfaceSession> {
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/group/session`)
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return { session_id: `quest:${questId}`, surface: 'group' }
+  }
+}
+
+export async function getLabFriendsSession(
+  projectId: string,
+  questId: string
+): Promise<LabSurfaceSession> {
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/friends/session`)
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return { session_id: `quest:${questId}`, surface: 'friends' }
+  }
+}
+
+export async function listLabMoments(
+  projectId: string,
+  params?: { questId?: string | null; cursor?: string | null; limit?: number }
+): Promise<LabMomentsResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/moments`, {
+    params: {
+      quest_id: params?.questId ?? undefined,
+      cursor: params?.cursor ?? undefined,
+      limit: params?.limit ?? undefined,
+    },
+  })
+  return response.data ?? { items: [] }
+}
+
+export async function likeLabMoment(
+  projectId: string,
+  momentId: string
+): Promise<LabLikeResponse> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/moments/${momentId}/like`)
+  return response.data
+}
+
+export async function unlikeLabMoment(
+  projectId: string,
+  momentId: string
+): Promise<LabLikeResponse> {
+  const response = await apiClient.delete(`${LAB_BASE(projectId)}/moments/${momentId}/like`)
+  return response.data
+}
+
+export async function commentLabMoment(
+  projectId: string,
+  momentId: string,
+  payload: { content: string }
+): Promise<LabMomentCommentResponse> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/moments/${momentId}/comments`, payload)
+  return response.data
+}
+
+export async function getLabAgentPrompt(
+  projectId: string,
+  agentInstanceId: string
+): Promise<LabAgentPromptResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/agents/${agentInstanceId}/prompt`)
+  return response.data ?? { content: '', updated_at: null }
+}
+
+export async function updateLabAgentPrompt(
+  projectId: string,
+  agentInstanceId: string,
+  payload: { content: string }
+): Promise<LabAgentPromptResponse> {
+  const response = await apiClient.put(`${LAB_BASE(projectId)}/agents/${agentInstanceId}/prompt`, payload)
+  return response.data
+}
+
+export async function listLabAgentHistory(
+  projectId: string,
+  agentInstanceId: string
+): Promise<{
+  items: Array<{
+    history_id: string
+    agent_instance_id: string
+    quest_id?: string | null
+    quest_node_id?: string | null
+    assigned_by?: string | null
+    assigned_at: string
+  }>
+}> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/agents/${agentInstanceId}/history`)
+  return response.data ?? { items: [] }
+}
+
+export async function deleteLabAgent(
+  projectId: string,
+  agentInstanceId: string,
+  cliServerId?: string
+): Promise<LabAgentDeleteResponse> {
+  const response = await apiClient.delete(`${LAB_BASE(projectId)}/agents/${agentInstanceId}`, {
+    params: cliServerId ? { cli_server_id: cliServerId } : undefined,
+  })
+  return response.data
+}
+
+export async function getLabSkillManifest(
+  projectId: string,
+  cliServerId: string
+): Promise<LabAssetContent> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/assets/knowledge/skills/manifest`, {
+    params: { cli_server_id: cliServerId },
+  })
+  return response.data
+}
+
+export async function getLabSkillDetail(
+  projectId: string,
+  cliServerId: string,
+  skillId: string
+): Promise<LabAssetContent> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/assets/knowledge/skills/${skillId}`, {
+    params: { cli_server_id: cliServerId },
+  })
+  return response.data
+}
+
+export async function getLabKnowledgeIndex(
+  projectId: string,
+  cliServerId: string,
+  kind: 'knowledge' | 'episodes' | 'incidents'
+): Promise<LabAssetContent> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/assets/knowledge/index/${kind}`, {
+    params: { cli_server_id: cliServerId },
+  })
+  return response.data
+}
+
+export async function getLabAssetFile(
+  projectId: string,
+  cliServerId: string,
+  path: string
+): Promise<LabAssetContent> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/assets/knowledge/file`, {
+    params: { cli_server_id: cliServerId, path },
+  })
+  return response.data
+}
+
+export async function listLabQuests(
+  projectId: string,
+  options?: LabRequestOptions
+): Promise<LabListResponse<LabQuest>> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    return { items: [mapQuestSummaryToLabQuest(summary, branches)] }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests`, buildLabRequestConfig(options))
+    return response.data ?? { items: [] }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    return { items: [mapQuestSummaryToLabQuest(summary, branches)] }
+  }
+}
+
+export async function getLabQuest(
+  projectId: string,
+  questId: string,
+  options?: LabRequestOptions
+): Promise<{ quest: LabQuest; nodes: LabQuestNode[]; blockers?: { count: number } }> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    return {
+      quest: mapQuestSummaryToLabQuest(summary, branches),
+      nodes: buildLocalQuestNodes(summary),
+      blockers: { count: summary.pending_decisions?.length ?? 0 },
+    }
+  }
+  try {
+    const response = await apiClient.get(
+      `${LAB_BASE(projectId)}/quests/${questId}`,
+      buildLabRequestConfig(options)
+    )
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    const nodes = buildLocalQuestNodes(summary)
+    return {
+      quest: mapQuestSummaryToLabQuest(summary, branches),
+      nodes,
+      blockers: { count: summary.pending_decisions?.length ?? 0 },
+    }
+  }
+}
+
+export async function getLabQuestGithubPushStatus(
+  projectId: string,
+  questId: string
+): Promise<LabQuestGithubPushStatus> {
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/github-push/status`)
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return {
+      configured: false,
+      prerequisites: {
+        cli_server_bound: true,
+        cli_server_online: true,
+        cli_server_remote: false,
+        github_identity_bound: false,
+        github_push_authorized: false,
+        repo_bound: false,
+      },
+      disabled_reason: 'Local quest mode keeps GitHub push disabled by default.',
+      binding: null,
+    }
+  }
+}
+
+export async function bindLabQuestGithubPushRepo(
+  projectId: string,
+  questId: string,
+  payload: {
+    installation_id?: string
+    repo_owner?: string
+    repo_name?: string
+    create_if_missing?: boolean
+    private_repo?: boolean
+  }
+): Promise<LabQuestGithubPushStatus> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests/${questId}/github-push/bind-repo`, payload)
+  return response.data
+}
+
+export async function updateLabQuestGithubPushConfig(
+  projectId: string,
+  questId: string,
+  payload: { auto_push_desired_enabled: boolean }
+): Promise<LabQuestGithubPushStatus> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests/${questId}/github-push/config`, payload)
+  return response.data
+}
+
+export async function createLabQuest(
+  projectId: string,
+  payload: {
+    title: string
+    description: string
+    tags?: string[]
+    baseline_root_id?: string
+    node_schema_json?: Record<string, unknown>
+    research_contract?: Record<string, unknown>
+  }
+): Promise<{ quest: LabQuest; nodes: LabQuestNode[] }> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests`, payload)
+  return response.data
+}
+
+export async function startLabQuestResearch(
+  projectId: string,
+  payload: {
+    quest_id?: string
+    cli_server_id: string
+    title?: string
+    description?: string
+    baseline_root_id?: string
+    research_contract?: Record<string, unknown>
+    runtime_profile?: {
+      model?: string
+      base_url?: string
+      api_key?: string
+      async_generation?: boolean
+      batch_size?: number
+      user_language?: string
+    }
+    kickoff_prompt: string
+    pi_agent?: {
+      template_key: string
+      agent_id?: string
+      request_id?: string
+      agent_instance_id?: string
+      display_name?: string
+      profile_json?: Record<string, unknown>
+      stats_json?: Record<string, unknown>
+      avatar_frame_color?: string
+    }
+    github_push?: LabStartResearchGithubPushPayload
+    reuse_existing_pi?: boolean
+  }
+): Promise<LabStartResearchResponse> {
+  try {
+    const response = await apiClient.post(`${LAB_BASE(projectId)}/research/start`, payload)
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    return {
+      quest: mapQuestSummaryToLabQuest(summary, branches),
+      pi_agent: mapQuestSummaryToLabAgent(summary),
+      direct_session_id: `quest:${summary.quest_id}`,
+      kickoff_queued: false,
+      kickoff_started: false,
+      kickoff_dispatch_mode: 'local-reuse',
+      quest_created: false,
+      pi_created: false,
+      github_push: {
+        enabled: false,
+        mode: 'local_only',
+      },
+      warnings: ['Local DeepScientist workspace reuses the current quest repository.'],
+    }
+  }
+}
+
+export async function updateLabQuest(
+  projectId: string,
+  questId: string,
+  payload: {
+    title?: string
+    description?: string
+    baseline_root_id?: string | null
+    node_schema_json?: Record<string, unknown>
+    research_contract?: Record<string, unknown>
+  }
+): Promise<{ quest: LabQuest }> {
+  const response = await apiClient.patch(`${LAB_BASE(projectId)}/quests/${questId}`, payload)
+  return response.data
+}
+
+export async function bindLabQuestBaseline(
+  projectId: string,
+  questId: string,
+  payload: { baseline_root_id: string }
+): Promise<{ quest: LabQuest; nodes: LabQuestNode[]; blockers: { count: number }; binding_action: string }> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests/${questId}/baseline-binding`, payload)
+  return response.data
+}
+
+export async function unbindLabQuestBaseline(
+  projectId: string,
+  questId: string
+): Promise<{ quest: LabQuest; nodes: LabQuestNode[]; blockers: { count: number }; binding_action: string }> {
+  const response = await apiClient.delete(`${LAB_BASE(projectId)}/quests/${questId}/baseline-binding`)
+  return response.data
+}
+
+export async function deleteLabQuest(
+  projectId: string,
+  questId: string
+): Promise<LabQuestDeleteResponse> {
+  const response = await apiClient.delete(`${LAB_BASE(projectId)}/quests/${questId}`)
+  return response.data
+}
+
+export async function updateLabQuestNode(
+  projectId: string,
+  nodeId: string,
+  payload: { status: string }
+): Promise<{ node: LabQuestNode }> {
+  const response = await apiClient.patch(`${LAB_BASE(projectId)}/quest-nodes/${nodeId}`, payload)
+  return response.data
+}
+
+export async function getLabQuestGraph(
+  projectId: string,
+  questId: string,
+  params?: { view?: 'branch' | 'event' | 'stage'; search?: string; atEventId?: string | null }
+): Promise<LabQuestGraphResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    const workflow = await loadLocalQuestWorkflow(projectId)
+    const nodeTraces = await loadLocalQuestNodeTraces(
+      projectId,
+      params?.view === 'event' ? 'event_node' : params?.view === 'stage' ? 'stage_node' : null
+    )
+    return buildLocalQuestGraphResponse(summary, branches, workflow, params, nodeTraces)
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/graph`, {
+      params: {
+        view: params?.view ?? undefined,
+        search: params?.search ?? undefined,
+        at_event_id: params?.atEventId ?? undefined,
+      },
+    })
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    return {
+      view: params?.view ?? 'branch',
+      nodes:
+        branches?.nodes?.length
+          ? branches.nodes.map((node) => mapGitNodeToLabQuestGraphNode(questId, summary, node))
+          : [buildFallbackGraphNode(summary)],
+      edges:
+        branches?.edges?.map((edge, index) => ({
+          edge_id: `edge:${index}:${edge.from}:${edge.to}`,
+          source: edge.from,
+          target: edge.to,
+          edge_type: edge.relation || 'branch',
+        })) ?? [],
+      head_branch: summary.branch || 'main',
+      layout_json: null,
+      metric_catalog: summary.summary?.latest_metric?.key
+        ? [
+            {
+              key: summary.summary.latest_metric.key,
+              label: summary.summary.latest_metric.key,
+              direction: 'higher',
+              importance: 1,
+            },
+          ]
+        : [],
+      governance_vm: buildLocalGovernanceVm(summary, branches),
+      overlay_actions: [],
+    }
+  }
+}
+
+export async function listLabQuestNodeTraces(
+  projectId: string,
+  questId: string,
+  params?: { selectionType?: string | null }
+): Promise<LabQuestNodeTraceListResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const response = await loadLocalQuestNodeTraces(projectId, params?.selectionType ?? null)
+    return response ?? { quest_id: questId, items: [] }
+  }
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/node-traces`, {
+    params: {
+      selection_type: params?.selectionType ?? undefined,
+    },
+  })
+  return response.data ?? { quest_id: questId, items: [] }
+}
+
+export async function getLabQuestNodeTrace(
+  projectId: string,
+  questId: string,
+  selectionRef: string,
+  params?: { selectionType?: string | null }
+): Promise<LabQuestNodeTraceResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    return questClient.nodeTrace(projectId, selectionRef, params?.selectionType ?? null)
+  }
+  const response = await apiClient.get(
+    `${LAB_BASE(projectId)}/quests/${questId}/node-traces/${encodeURIComponent(selectionRef)}`,
+    {
+      params: {
+        selection_type: params?.selectionType ?? undefined,
+      },
+    }
+  )
+  return response.data
+}
+
+export async function listLabQuestGraphActions(
+  projectId: string,
+  questId: string
+): Promise<LabQuestGraphActionListResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    return { items: [] }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/graph-actions`)
+    return response.data ?? { items: [] }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return { items: [] }
+  }
+}
+
+export async function createLabQuestGraphAction(
+  projectId: string,
+  questId: string,
+  payload: {
+    action_type: string
+    status?: string
+    selection_ref: string
+    branch_name?: string | null
+    target_agent_instance_ids?: string[]
+    payload?: Record<string, unknown>
+    selection_context?: LabQuestSelectionContext | null
+    user_prompt?: string | null
+    generated_prompt?: string | null
+  }
+): Promise<LabQuestGraphActionResponse> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests/${questId}/graph-actions`, payload)
+  return response.data
+}
+
+export async function updateLabQuestGraphAction(
+  projectId: string,
+  questId: string,
+  actionId: string,
+  payload: {
+    status?: string
+    generated_prompt?: string | null
+    payload?: Record<string, unknown>
+  }
+): Promise<LabQuestGraphActionResponse> {
+  const response = await apiClient.patch(
+    `${LAB_BASE(projectId)}/quests/${questId}/graph-actions/${actionId}`,
+    payload
+  )
+  return response.data
+}
+
+export async function getLabQuestSummary(
+  projectId: string,
+  questId: string,
+  params?: { atEventId?: string | null }
+): Promise<LabQuestSummaryResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    return {
+      quest: buildLocalGovernanceVm(summary, branches),
+    }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/summary`, {
+      params: {
+        at_event_id: params?.atEventId ?? undefined,
+      },
+    })
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    return {
+      quest: buildLocalGovernanceVm(summary, branches),
+    }
+  }
+}
+
+export async function getLabQuestTimeline(
+  projectId: string,
+  questId: string,
+  params?: { limit?: number }
+): Promise<LabQuestTimelineResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const workflow = await loadLocalQuestWorkflow(projectId)
+    const limit = Math.max(1, params?.limit ?? 80)
+    return {
+      items: (workflow?.entries ?? [])
+        .map(mapWorkflowEntryToTimeline)
+        .sort((left, right) => String(right.created_at || '').localeCompare(String(left.created_at || '')))
+        .slice(0, limit),
+    }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/timeline`, {
+      params: {
+        limit: params?.limit ?? undefined,
+      },
+    })
+    return response.data ?? { items: [] }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const workflow = await loadLocalQuestWorkflow(projectId)
+    const limit = Math.max(1, params?.limit ?? 80)
+    return {
+      items: (workflow?.entries ?? [])
+        .map(mapWorkflowEntryToTimeline)
+        .sort((left, right) => String(right.created_at || '').localeCompare(String(left.created_at || '')))
+        .slice(0, limit),
+    }
+  }
+}
+
+export async function getLabQuestCompare(
+  projectId: string,
+  questId: string,
+  params?: { selectedBranch?: string | null; atEventId?: string | null }
+): Promise<LabQuestCompareResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    const selectedBranch = params?.selectedBranch || summary.branch || branches?.current_ref || 'main'
+    const selectedNode = branches?.nodes?.find((node) => node.ref === selectedBranch) ?? null
+    const baseBranch = selectedNode?.compare_base || selectedNode?.parent_ref || branches?.default_ref || 'main'
+    let compare: GitComparePayload | null = null
+    try {
+      compare = await questClient.gitCompare(projectId, baseBranch, selectedBranch)
+    } catch {
+      compare = null
+    }
+    return {
+      baseline_branch: baseBranch,
+      head_branch: summary.branch || selectedBranch,
+      selected_branch: selectedBranch,
+      metric_table: latestMetrics(summary) ?? {},
+      series: [],
+      key_findings: summary.summary?.status_line ? [summary.summary.status_line] : [],
+      git_diff:
+        compare?.files?.map((file) => ({
+          path: file.path,
+          status: file.status,
+          added: file.added,
+          removed: file.removed,
+        })) ?? [],
+      artifact_diff: (summary.recent_artifacts || []).map((artifact) => ({
+        kind: artifact.kind,
+        summary: artifact.payload?.summary || artifact.payload?.reason || null,
+        status: artifact.payload?.status || null,
+      })),
+    }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/compare`, {
+      params: {
+        selected_branch: params?.selectedBranch ?? undefined,
+        at_event_id: params?.atEventId ?? undefined,
+      },
+    })
+    return response.data ?? {
+      metric_table: {},
+      series: [],
+      key_findings: [],
+      git_diff: [],
+      artifact_diff: [],
+    }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    const selectedBranch = params?.selectedBranch || summary.branch || branches?.current_ref || 'main'
+    const selectedNode = branches?.nodes?.find((node) => node.ref === selectedBranch) ?? null
+    const baseBranch = selectedNode?.compare_base || selectedNode?.parent_ref || branches?.default_ref || 'main'
+    let compare: GitComparePayload | null = null
+    try {
+      compare = await questClient.gitCompare(projectId, baseBranch, selectedBranch)
+    } catch {
+      compare = null
+    }
+    return {
+      baseline_branch: baseBranch,
+      head_branch: summary.branch || selectedBranch,
+      selected_branch: selectedBranch,
+      metric_table: latestMetrics(summary) ?? {},
+      series: [],
+      key_findings: summary.summary?.status_line ? [summary.summary.status_line] : [],
+      git_diff:
+        compare?.files?.map((file) => ({
+          path: file.path,
+          status: file.status,
+          added: file.added,
+          removed: file.removed,
+        })) ?? [],
+      artifact_diff: (summary.recent_artifacts || []).map((artifact) => ({
+        kind: artifact.kind,
+        summary: artifact.payload?.summary || artifact.payload?.reason || null,
+        status: artifact.payload?.status || null,
+      })),
+    }
+  }
+}
+
+export async function getLabQuestRunAudit(
+  projectId: string,
+  questId: string,
+  runId: string,
+  params?: { atEventId?: string | null }
+): Promise<LabQuestRunAuditResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/runs/${encodeURIComponent(runId)}/audit`, {
+    params: {
+      at_event_id: params?.atEventId ?? undefined,
+    },
+  })
+  return response.data
+}
+
+export async function getLabQuestBranchAudit(
+  projectId: string,
+  questId: string,
+  branchName: string,
+  params?: { atEventId?: string | null }
+): Promise<LabQuestBranchAuditResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    const selectedNode = branches?.nodes?.find((node) => node.ref === branchName) ?? null
+    const baseBranch = selectedNode?.compare_base || selectedNode?.parent_ref || branches?.default_ref || 'main'
+    let compare: GitComparePayload | null = null
+    try {
+      compare = await questClient.gitCompare(projectId, baseBranch, branchName)
+    } catch {
+      compare = null
+    }
+    return {
+      quest_id: questId,
+      branch_name: branchName,
+      head_branch: summary.branch || branchName,
+      parent_branch: selectedNode?.parent_ref || baseBranch,
+      latest_commit: selectedNode?.head || summary.head || null,
+      stage: selectedNode?.run_kind || resolveStageKey(summary.active_anchor),
+      audit_level: 'local',
+      branch_summary: {
+        title: selectedNode?.label || branchName,
+        status_line: summary.summary?.status_line || null,
+      },
+      idea: {
+        idea_id: selectedNode?.idea_id || null,
+        summary: selectedNode?.latest_summary || null,
+      },
+      diff: {
+        base: baseBranch,
+        head: branchName,
+        file_count: compare?.file_count ?? 0,
+        commit_count: compare?.commit_count ?? 0,
+      },
+      experiments: (summary.recent_runs || []).map((run) => ({
+        run_id: run.run_id,
+        status: run.status,
+        summary: run.summary,
+      })),
+      decisions: (summary.pending_decisions || []).map((decision) => ({
+        decision,
+        status: 'pending',
+      })),
+      related_memory: [],
+      claim_map_path: null,
+      bundle_manifest_path: null,
+      compare_context: {
+        selected_branch: branchName,
+        base_branch: baseBranch,
+      },
+    }
+  }
+  try {
+    const response = await apiClient.get(
+      `${LAB_BASE(projectId)}/quests/${questId}/branches/${encodeURIComponent(branchName)}/audit`,
+      {
+        params: {
+          at_event_id: params?.atEventId ?? undefined,
+        },
+      }
+    )
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    const selectedNode = branches?.nodes?.find((node) => node.ref === branchName) ?? null
+    const baseBranch = selectedNode?.compare_base || selectedNode?.parent_ref || branches?.default_ref || 'main'
+    let compare: GitComparePayload | null = null
+    try {
+      compare = await questClient.gitCompare(projectId, baseBranch, branchName)
+    } catch {
+      compare = null
+    }
+    return {
+      quest_id: questId,
+      branch_name: branchName,
+      head_branch: summary.branch || branchName,
+      parent_branch: selectedNode?.parent_ref || baseBranch,
+      latest_commit: selectedNode?.head || summary.head || null,
+      stage: selectedNode?.run_kind || resolveStageKey(summary.active_anchor),
+      audit_level: 'local',
+      branch_summary: {
+        title: selectedNode?.label || branchName,
+        status_line: summary.summary?.status_line || null,
+      },
+      idea: {
+        idea_id: selectedNode?.idea_id || null,
+        summary: selectedNode?.latest_summary || null,
+      },
+      diff: {
+        base: baseBranch,
+        head: branchName,
+        file_count: compare?.file_count ?? 0,
+        commit_count: compare?.commit_count ?? 0,
+      },
+      experiments: (summary.recent_runs || []).map((run) => ({
+        run_id: run.run_id,
+        status: run.status,
+        summary: run.summary,
+      })),
+      decisions: (summary.pending_decisions || []).map((decision) => ({
+        decision,
+        status: 'pending',
+      })),
+      related_memory: [],
+      claim_map_path: null,
+      bundle_manifest_path: null,
+      compare_context: {
+        selected_branch: branchName,
+        base_branch: baseBranch,
+      },
+    }
+  }
+}
+
+export async function createLabQuestAgentGroupMessage(
+  projectId: string,
+  questId: string,
+  payload: {
+    message_id?: string
+    author_agent_instance_id: string
+    target_agent_instance_ids: string[]
+    content: string
+    quote_message_id?: string | null
+    proposal_id?: string | null
+    selection_context?: LabQuestSelectionContext | null
+    await_answer?: boolean
+    message_kind?: string | null
+    branch_name?: string | null
+  }
+): Promise<LabQuestAgentGroupMessageCreateResponse> {
+  const response = await apiClient.post(
+    `${LAB_BASE(projectId)}/quests/${questId}/group/agent-messages`,
+    payload
+  )
+  return response.data
+}
+
+export async function getLabQuestDiff(
+  projectId: string,
+  questId: string,
+  params?: { base?: string; branch?: string; cursor?: number; limitFiles?: number }
+): Promise<LabQuestDiffResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/diff`, {
+    params: {
+      base: params?.base ?? undefined,
+      branch: params?.branch ?? undefined,
+      cursor: params?.cursor ?? undefined,
+      limit_files: params?.limitFiles ?? undefined,
+    },
+  })
+  return response.data
+}
+
+export async function getLabQuestDiffFile(
+  projectId: string,
+  questId: string,
+  params: {
+    base?: string
+    branch?: string
+    path: string
+    hunkCursor?: number
+    hunkLimit?: number
+    context?: number
+    includeContents?: boolean
+  }
+): Promise<LabQuestDiffFileResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/diff/file`, {
+    params: {
+      base: params.base ?? undefined,
+      branch: params.branch ?? undefined,
+      path: params.path,
+      hunk_cursor: params.hunkCursor ?? undefined,
+      hunk_limit: params.hunkLimit ?? undefined,
+      context: params.context ?? undefined,
+      include_contents: params.includeContents ?? undefined,
+    },
+  })
+  return response.data
+}
+
+export async function getLabQuestGitFile(
+  projectId: string,
+  questId: string,
+  params: { path: string; ref?: string; maxBytes?: number }
+): Promise<LabQuestGitFileResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/git/file`, {
+    params: {
+      path: params.path,
+      ref: params.ref ?? undefined,
+      max_bytes: params.maxBytes ?? undefined,
+    },
+  })
+  return response.data
+}
+
+export async function getLabQuestGitCommits(
+  projectId: string,
+  questId: string,
+  params?: { ref?: string; cursor?: number; limit?: number }
+): Promise<LabQuestGitCommitListResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/git/commits`, {
+    params: {
+      ref: params?.ref ?? undefined,
+      cursor: params?.cursor ?? undefined,
+      limit: params?.limit ?? undefined,
+    },
+  })
+  return response.data
+}
+
+export async function mergeLabQuestGitBranch(
+  projectId: string,
+  questId: string,
+  payload: LabQuestGitMergeRequest
+): Promise<LabQuestGitMergeResponse> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests/${questId}/git/merge`, payload)
+  return response.data
+}
+
+export async function revertLabQuestGitCommit(
+  projectId: string,
+  questId: string,
+  payload: LabQuestGitRevertRequest
+): Promise<LabQuestGitRevertResponse> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests/${questId}/git/revert`, payload)
+  return response.data
+}
+
+export async function exportLabQuestGitBundle(
+  projectId: string,
+  questId: string,
+  payload: LabQuestGitBundleExportRequest
+): Promise<LabQuestGitBundleExportResponse> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests/${questId}/git/export-bundle`, payload)
+  return response.data
+}
+
+export async function restoreLabQuestGitBundle(
+  projectId: string,
+  questId: string,
+  payload: LabQuestGitBundleRestoreRequest
+): Promise<LabQuestGitBundleRestoreResponse> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests/${questId}/git/restore-bundle`, payload)
+  return response.data
+}
+
+export async function reconcileLabQuestGitBranch(
+  projectId: string,
+  questId: string,
+  payload: LabQuestGitReconcileRequest
+): Promise<LabQuestGitReconcileResponse> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests/${questId}/git/reconcile`, payload)
+  return response.data
+}
+
+export async function listLabQuestGitIncidents(
+  projectId: string,
+  questId: string
+): Promise<LabQuestGitIncidentListResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/git-incidents`)
+  return response.data
+}
+
+export async function listLabQuestWorktreeLeases(
+  projectId: string,
+  questId: string
+): Promise<LabQuestWorktreeLeaseListResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/worktree-leases`)
+  return response.data
+}
+
+export async function listLabQuestGitExports(
+  projectId: string,
+  questId: string
+): Promise<LabQuestGitExportListResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/git-exports`)
+  return response.data
+}
+
+export async function listLabQuestGitReconciliations(
+  projectId: string,
+  questId: string
+): Promise<LabQuestGitReconciliationListResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/git-reconciliations`)
+  return response.data
+}
+
+export async function listLabQuestEvents(
+  projectId: string,
+  questId: string,
+  params?: {
+    branch?: string
+    eventIds?: string[]
+    eventTypes?: string[]
+    eventPrefixes?: string[]
+    atEventId?: string | null
+    cursor?: string
+    limit?: number
+    includePayload?: boolean
+  }
+): Promise<LabQuestEventListResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const workflow = await loadLocalQuestWorkflow(projectId)
+    const items = (workflow?.entries ?? []).map(mapWorkflowEntryToQuestEvent)
+    return {
+      items: items
+        .sort((left, right) => String(right.created_at || '').localeCompare(String(left.created_at || '')))
+        .slice(0, Math.max(1, params?.limit ?? 80)),
+      next_cursor: null,
+      has_more: false,
+    }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/events`, {
+      params: {
+        branch: params?.branch ?? undefined,
+        event_ids: params?.eventIds?.length ? params.eventIds.join(',') : undefined,
+        event_types: params?.eventTypes?.length ? params.eventTypes.join(',') : undefined,
+        event_prefixes: params?.eventPrefixes?.length ? params.eventPrefixes.join(',') : undefined,
+        at_event_id: params?.atEventId ?? undefined,
+        cursor: params?.cursor ?? undefined,
+        limit: params?.limit ?? undefined,
+        include_payload: params?.includePayload ?? undefined,
+      },
+    })
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const workflow = await loadLocalQuestWorkflow(projectId)
+    const items = (workflow?.entries ?? []).map(mapWorkflowEntryToQuestEvent)
+    return {
+      items: items
+        .sort((left, right) => String(right.created_at || '').localeCompare(String(left.created_at || '')))
+        .slice(0, Math.max(1, params?.limit ?? 80)),
+      next_cursor: null,
+      has_more: false,
+    }
+  }
+}
+
+export async function searchLabQuest(
+  projectId: string,
+  questId: string,
+  params?: { query?: string; types?: string; limit?: number; cursor?: string }
+): Promise<LabQuestSearchResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const query = String(params?.query || '').trim().toLowerCase()
+    const limit = Math.max(1, Math.min(100, params?.limit ?? 20))
+    const workflow = await loadLocalQuestWorkflow(projectId)
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    const branchItems = (branches?.nodes ?? [buildFallbackGraphNode(summary)])
+      .filter((branch) => {
+        if (!query) return true
+        const haystack = [
+          branch.branch_name,
+          branch.target_label,
+          branch.status,
+          branch.verdict,
+          branch.node_summary?.last_reply,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return haystack.includes(query)
+      })
+      .map((branch) => ({ item_type: 'branch' as const, branch, event: null }))
+    const eventItems = (workflow?.entries ?? [])
+      .filter((entry) => {
+        if (!query) return true
+        const haystack = [entry.title, entry.summary, entry.raw_event_type, entry.skill_id]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return haystack.includes(query)
+      })
+      .map((entry) => ({ item_type: 'event' as const, event: mapWorkflowEntryToQuestEvent(entry), branch: null }))
+    const items = [...branchItems, ...eventItems].slice(0, limit)
+    return {
+      items,
+      next_cursor: null,
+      has_more: false,
+      total_estimate: items.length,
+    }
+  }
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/search`, {
+    params: {
+      q: params?.query ?? undefined,
+      types: params?.types ?? undefined,
+      limit: params?.limit ?? undefined,
+      cursor: params?.cursor ?? undefined,
+    },
+  })
+  return response.data
+}
+
+export async function getLabQuestEventPayload(
+  projectId: string,
+  questId: string,
+  eventId: string,
+  params?: { source?: string; maxBytes?: number }
+): Promise<LabQuestEventPayloadResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const workflow = await loadLocalQuestWorkflow(projectId)
+    const matched = (workflow?.entries ?? []).find((entry) => entry.id === eventId)
+    return {
+      event_id: eventId,
+      payload_json: matched
+        ? {
+            title: matched.title,
+            summary: matched.summary,
+            status: matched.status,
+            tool_name: matched.tool_name,
+            args: matched.args,
+            output: matched.output,
+          }
+        : null,
+      payload_hash: null,
+      payload_path: null,
+      truncated: false,
+      source: params?.source ?? 'local-workflow',
+      available: Boolean(matched),
+    }
+  }
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/events/${eventId}/payload`, {
+    params: {
+      source: params?.source ?? undefined,
+      max_bytes: params?.maxBytes ?? undefined,
+    },
+  })
+  return response.data
+}
+
+export async function getLabQuestSnapshot(
+  projectId: string,
+  questId: string
+): Promise<LabQuestSnapshotResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    const workflow = await loadLocalQuestWorkflow(projectId)
+    const recentEntries = (workflow?.entries ?? []).slice(-6).reverse()
+    const snapshotMd = [
+      `# ${summary.title || questId}`,
+      '',
+      `- Quest ID: \`${summary.quest_id}\``,
+      `- Branch: \`${summary.branch || 'main'}\``,
+      `- Status: ${summary.status || 'idle'}`,
+      `- Updated: ${normalizeTimestamp(summary.updated_at)}`,
+      summary.summary?.status_line ? `- Summary: ${summary.summary.status_line}` : null,
+      '',
+      '## Recent Activity',
+      recentEntries.length
+        ? recentEntries
+            .map(
+              (entry) =>
+                `- ${entry.title || entry.raw_event_type || entry.kind} — ${entry.summary || entry.status || 'no summary'}`
+            )
+            .join('\n')
+        : '- No workflow events yet.',
+    ]
+      .filter(Boolean)
+      .join('\n')
+    return {
+      snapshot_md: snapshotMd,
+      source: 'local-summary',
+    }
+  }
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/snapshot`)
+  return response.data
+}
+
+export async function getLabQuestSyncStatus(
+  projectId: string,
+  questId: string
+): Promise<LabQuestSyncStatus> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    const workflow = await loadLocalQuestWorkflow(projectId)
+    const lastEntry = workflow?.entries?.[workflow.entries.length - 1]
+    return {
+      quest_id: questId,
+      events_total: workflow?.entries?.length ?? 0,
+      last_event_id: lastEntry?.id ?? null,
+      last_event_commit: summary.head || null,
+      cli_server_id: `local:${projectId}`,
+      pi_state: summary.status || null,
+      runtime: {
+        branch: summary.branch || 'main',
+      },
+    }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/sync/status`)
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    const workflow = await loadLocalQuestWorkflow(projectId)
+    const lastEntry = workflow?.entries?.[workflow.entries.length - 1]
+    return {
+      quest_id: questId,
+      events_total: workflow?.entries?.length ?? 0,
+      last_event_id: lastEntry?.id ?? null,
+      last_event_commit: summary.head || null,
+      cli_server_id: `local:${projectId}`,
+      pi_state: summary.status || null,
+      runtime: {
+        branch: summary.branch || 'main',
+      },
+    }
+  }
+}
+
+export async function getLabQuestRuntime(
+  projectId: string,
+  questId: string
+): Promise<LabQuestRuntimeResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    const working = normalizeLabWorkingStatus(summary.status) === 'working'
+    return {
+      quest_id: questId,
+      runtime: {
+        runningAgents: working ? 1 : 0,
+        runningPiAgents: working ? 1 : 0,
+        runningWorkerAgents: 0,
+        lastHeartbeatAt: normalizeTimestamp(summary.updated_at),
+        piState: summary.status || 'idle',
+        parallelLimit: 1,
+        activeSlots: working ? 1 : 0,
+      },
+    }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/runtime`)
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    const working = normalizeLabWorkingStatus(summary.status) === 'working'
+    return {
+      quest_id: questId,
+      runtime: {
+        runningAgents: working ? 1 : 0,
+        runningPiAgents: working ? 1 : 0,
+        runningWorkerAgents: 0,
+        lastHeartbeatAt: normalizeTimestamp(summary.updated_at),
+        piState: summary.status || 'idle',
+        parallelLimit: 1,
+        activeSlots: working ? 1 : 0,
+        availableSlots: working ? 0 : 1,
+        blockedReasons: summary.pending_decisions?.length ? ['pending_decision'] : [],
+        cliStatus: 'online',
+        cliLastSeenAt: normalizeTimestamp(summary.updated_at),
+      },
+      scheduler: {
+        parallel_limit: 1,
+        active_slots: working ? 1 : 0,
+        available_slots: working ? 0 : 1,
+        blocked_reasons: summary.pending_decisions?.length ? ['pending_decision'] : [],
+      },
+      active_runs: (summary.recent_runs || [])
+        .filter((run) => normalizeLabWorkingStatus(run.status) === 'working')
+        .map((run) => ({
+          run_id: run.run_id || `run:${questId}`,
+          session_id: `quest:${questId}`,
+          agent_id: `${questId}:pi`,
+          agent_instance_id: `${questId}:pi`,
+          template_key: 'principal-investigator',
+          branch_name: summary.branch || 'main',
+          stage_key: resolveStageKey(summary.active_anchor),
+          status: run.status || 'running',
+          pi_launched: true,
+          role: 'lead',
+          started_at: normalizeTimestamp(run.created_at),
+          last_heartbeat_at: normalizeTimestamp(run.updated_at || run.created_at),
+        })),
+      routes: [
+        {
+          route_id: `route:${questId}:${summary.branch || 'main'}`,
+          branch_name: summary.branch || 'main',
+          worktree_rel_path: null,
+          status: working ? 'active' : 'idle',
+          parallel_group: null,
+          active_run_count: working ? 1 : 0,
+          stage_keys: [resolveStageKey(summary.active_anchor)],
+          template_keys: ['principal-investigator'],
+          agent_instance_ids: [`${questId}:pi`],
+          session_ids: [`quest:${questId}`],
+          last_heartbeat_at: normalizeTimestamp(summary.updated_at),
+          blocked_reasons: summary.pending_decisions?.length ? ['pending_decision'] : [],
+        },
+      ],
+      recent_commands: [],
+      worktree_leases: [],
+    }
+  }
+}
+
+export async function getLabMemorySyncStatus(
+  projectId: string,
+  params?: { questId?: string | null; cliServerId?: string | null }
+): Promise<LabMemorySyncStatus> {
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/memory/sync/status`, {
+      params: {
+        quest_id: params?.questId ?? undefined,
+        cli_server_id: params?.cliServerId ?? undefined,
+      },
+    })
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return {
+      pending_count: 0,
+      failed_count: 0,
+      last_error: null,
+      last_synced_at: nowIso(),
+      updated_at: nowIso(),
+      cli_server_id: params?.cliServerId ?? `local:${projectId}`,
+      cli_status: 'online',
+      cli_last_seen_at: nowIso(),
+    }
+  }
+}
+
+export async function controlLabPi(
+  projectId: string,
+  questId: string,
+  payload: LabPiControlRequest
+): Promise<LabPiControlResponse> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests/${questId}/pi/control`, payload)
+  return response.data
+}
+
+export async function updateLabQuestLayout(
+  projectId: string,
+  questId: string,
+  layoutJson: Record<string, unknown>
+): Promise<LabQuestLayoutResponse> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/quests/${questId}/layout`, {
+    layout_json: layoutJson,
+  })
+  return response.data
+}
+
+export async function getLabQuestArtifact(
+  projectId: string,
+  questId: string,
+  path: string
+): Promise<LabQuestArtifactContent> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/quests/${questId}/artifacts`, {
+    params: { path },
+  })
+  return response.data
+}
+
+export async function listLabBaselines(projectId: string): Promise<LabListResponse<LabBaseline>> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    return {
+      items: [
+        {
+          baseline_root_id: `${summary.quest_id}:baseline`,
+          title: `${summary.title || summary.quest_id} baseline`,
+          status: 'tracked',
+          last_reproduced_at: normalizeTimestamp(summary.updated_at),
+          archive_file_id: null,
+        },
+      ],
+    }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/assets/baselines`)
+    return response.data ?? { items: [] }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    return {
+      items: [
+        {
+          baseline_root_id: `${summary.quest_id}:baseline`,
+          title: `${summary.title || summary.quest_id} baseline`,
+          status: 'tracked',
+          last_reproduced_at: normalizeTimestamp(summary.updated_at),
+          archive_file_id: null,
+        },
+      ],
+    }
+  }
+}
+
+export async function listLabPapers(
+  projectId: string,
+  params?: { questId?: string | null }
+): Promise<LabListResponse<LabPaper>> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    return { items: [] }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/assets/papers`, {
+      params: params?.questId ? { quest_id: params.questId } : undefined,
+    })
+    return response.data ?? { items: [] }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return { items: [] }
+  }
+}
+
+export async function listLabBaselineResults(
+  projectId: string,
+  baselineId: string,
+  params?: { cursor?: string; limit?: number }
+): Promise<LabBaselineResultsResponse> {
+  const response = await apiClient.get(`${LAB_BASE(projectId)}/assets/baselines/${baselineId}/results`, {
+    params: {
+      cursor: params?.cursor ?? undefined,
+      limit: params?.limit ?? undefined,
+    },
+  })
+  return response.data
+}
+
+export async function createLabBaselineFromAgent(
+  projectId: string,
+  payload: {
+    agent_instance_id: string
+    title?: string
+    description?: string
+    archive_source_path?: string
+  }
+): Promise<{ baseline_root_id: string }> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/assets/baselines/from-agent`, payload)
+  return response.data
+}
+
+export async function archiveLabBaseline(
+  projectId: string,
+  baselineId: string
+): Promise<{ archive_file_id: string }> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/assets/baselines/${baselineId}/archive`)
+  return response.data
+}
+
+export async function restoreLabBaseline(
+  projectId: string,
+  baselineId: string,
+  payload: { target_path: string; cli_server_id: string }
+): Promise<{ restore_job_id: string }> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/assets/baselines/${baselineId}/restore`, payload)
+  return response.data
+}
+
+export async function getLabOverview(projectId: string, options?: LabRequestOptions): Promise<LabOverview> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    return {
+      agents: { total: 1 },
+      quests: {
+        active: normalizeLabWorkingStatus(summary.status) === 'done' ? 0 : 1,
+        blocked: normalizeLabWorkingStatus(summary.status) === 'blocked' ? 1 : 0,
+        completed: normalizeLabWorkingStatus(summary.status) === 'done' ? 1 : 0,
+      },
+      assets: {
+        baselines: 1,
+        papers: 0,
+        branches: Math.max(1, branches?.nodes?.length ?? 1),
+      },
+      decisions: {
+        pending: summary.pending_decisions?.length ?? 0,
+      },
+      achievements: { total: 0 },
+    }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/overview`, buildLabRequestConfig(options))
+    return response.data ?? {}
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const summary = await loadLocalQuestSummary(projectId)
+    const branches = await loadLocalQuestBranches(projectId)
+    return {
+      agents: { total: 1 },
+      quests: {
+        active: normalizeLabWorkingStatus(summary.status) === 'done' ? 0 : 1,
+        blocked: normalizeLabWorkingStatus(summary.status) === 'blocked' ? 1 : 0,
+        completed: normalizeLabWorkingStatus(summary.status) === 'done' ? 1 : 0,
+      },
+      assets: {
+        baselines: 1,
+        papers: 0,
+      },
+      achievements: { total: 0 },
+      recent_activity: buildLocalRecentActivity(summary),
+      github_push: {
+        enabled: false,
+        mode: 'local_only',
+      },
+      graph_vm: {
+        project: {
+          projectId,
+          questCount: 1,
+          pendingDecisionCount: summary.pending_decisions?.length ?? 0,
+          runningBranchCount: normalizeLabWorkingStatus(summary.status) === 'working' ? 1 : 0,
+          pushFailedCount: 0,
+          writerConflictCount: 0,
+        },
+        quests: [buildLocalGovernanceVm(summary, branches)],
+      },
+    }
+  }
+}
+
+export async function getLabGithubPushDefault(
+  projectId: string,
+  options?: LabRequestOptions
+): Promise<LabGithubPushDefaultStatus> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    return {
+      auto_push_default_enabled: false,
+      github_identity_bound: false,
+      github_push_authorized: false,
+      bound_installation_id: null,
+      repositories: [],
+    } as LabGithubPushDefaultStatus
+  }
+  try {
+    const response = await apiClient.get(
+      `${LAB_BASE(projectId)}/github-push/default`,
+      buildLabRequestConfig(options)
+    )
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return {
+      auto_push_default_enabled: false,
+      github_identity_bound: false,
+      github_push_authorized: false,
+      bound_installation_id: null,
+      repositories: [],
+    } as LabGithubPushDefaultStatus
+  }
+}
+
+export async function updateLabGithubPushDefault(
+  projectId: string,
+  payload: { auto_push_default_enabled: boolean }
+): Promise<LabGithubPushDefaultStatus> {
+  const response = await apiClient.post(`${LAB_BASE(projectId)}/github-push/default`, payload)
+  return response.data
+}
+
+export async function listLabPendingQuestions(
+  projectId: string
+): Promise<LabPendingQuestionListResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    return { items: [], total: 0 }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/questions/pending`)
+    return response.data ?? { items: [], total: 0 }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return { items: [], total: 0 }
+  }
+}
+
+export async function listLabQuestionHistory(
+  projectId: string,
+  cursor?: string | null
+): Promise<LabQuestionHistoryResponse> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    return { items: [], next_cursor: null }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/questions/history`, {
+      params: { cursor: cursor ?? undefined },
+    })
+    return response.data ?? { items: [], next_cursor: null }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return { items: [], next_cursor: null }
+  }
+}
+
+export async function listLabAchievements(projectId: string): Promise<LabListResponse<LabAchievement>> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    return { items: [] }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/achievements`)
+    return response.data ?? { items: [] }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return { items: [] }
+  }
+}
+
+export async function listLabMemory(
+  projectId: string,
+  params?: {
+    kind?: string
+    query?: string
+    tags?: string[]
+    questId?: string | null
+    branchName?: string | null
+    stageKey?: string | null
+    originEventId?: string | null
+    ideaId?: string | null
+    runId?: string | null
+    agentInstanceId?: string | null
+    authorityLevel?: string | null
+    reviewStatus?: string | null
+    atEventId?: string | null
+    limit?: number
+  }
+): Promise<LabMemoryListResponse> {
+  const normalizedLimit =
+    typeof params?.limit === 'number'
+      ? Math.max(1, Math.min(100, Math.trunc(params.limit)))
+      : undefined
+  if (await shouldUseLocalQuestLab(projectId)) {
+    const cards = await questClient.memory(projectId)
+    let items = cards.map(mapMemoryCardToEntry)
+    if (params?.kind) {
+      items = items.filter((item) => item.kind === params.kind)
+    }
+    if (params?.query) {
+      const query = params.query.toLowerCase()
+      items = items.filter((item) =>
+        `${item.title || ''} ${item.summary || ''}`.toLowerCase().includes(query)
+      )
+    }
+    return { items: items.slice(0, normalizedLimit ?? 50) }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/memory`, {
+      params: {
+        kind: params?.kind ?? undefined,
+        query: params?.query ?? undefined,
+        tags: params?.tags?.join(',') ?? undefined,
+        quest_id: params?.questId ?? undefined,
+        branch_name: params?.branchName ?? undefined,
+        stage_key: params?.stageKey ?? undefined,
+        origin_event_id: params?.originEventId ?? undefined,
+        idea_id: params?.ideaId ?? undefined,
+        run_id: params?.runId ?? undefined,
+        agent_instance_id: params?.agentInstanceId ?? undefined,
+        authority_level: params?.authorityLevel ?? undefined,
+        review_status: params?.reviewStatus ?? undefined,
+        at_event_id: params?.atEventId ?? undefined,
+        limit: normalizedLimit,
+      },
+    })
+    return response.data ?? { items: [] }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    const cards = await questClient.memory(projectId)
+    let items = cards.map(mapMemoryCardToEntry)
+    if (params?.kind) {
+      items = items.filter((item) => item.kind === params.kind)
+    }
+    if (params?.query) {
+      const query = params.query.toLowerCase()
+      items = items.filter((item) =>
+        `${item.title || ''} ${item.summary || ''}`.toLowerCase().includes(query)
+      )
+    }
+    return { items: items.slice(0, normalizedLimit ?? 50) }
+  }
+}
+
+export async function getLabMemoryEntry(
+  projectId: string,
+  entryId: string
+): Promise<LabMemoryEntry> {
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/memory/${entryId}`)
+    return response.data
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return resolveLocalMemoryEntry(projectId, entryId)
+  }
+}
+
+export async function listLabAchievementDefinitions(
+  projectId: string
+): Promise<LabListResponse<LabAchievementDefinition>> {
+  if (await shouldUseLocalQuestLab(projectId)) {
+    return { items: [] }
+  }
+  try {
+    const response = await apiClient.get(`${LAB_BASE(projectId)}/achievements/definitions`)
+    return response.data ?? { items: [] }
+  } catch (error) {
+    if (!isLocalLabFallbackError(error)) {
+      throw error
+    }
+    return { items: [] }
+  }
+}

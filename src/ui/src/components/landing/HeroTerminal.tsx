@@ -1,0 +1,239 @@
+'use client'
+
+import type { ReactNode } from 'react'
+import { cn } from '@/lib/utils'
+import { HERO_RESEARCH_STEPS, HERO_TERMINAL_INTRO } from './hero-content'
+
+type SegmentType = 'blue' | 'red' | 'gradient'
+type Segment = { start: number; end: number; type: SegmentType }
+
+const WORD = 'DEEPSCIENTIST'
+
+const LETTERS: Record<string, string[]> = {
+  D: [
+    '██████▓░ ',
+    '██░░░▒█░ ',
+    '██    █░ ',
+    '██    █░ ',
+    '██░░░▒█░ ',
+    '██████▓░ ',
+    '░░░░░░░░ ',
+  ],
+  E: [
+    '██████▓░',
+    '██░░░░░ ',
+    '█████▓  ',
+    '██░░░░  ',
+    '██      ',
+    '██████▓░',
+    '░░░░░░░░',
+  ],
+  P: [
+    '█████▓░ ',
+    '██░░██░ ',
+    '█████▓░ ',
+    '██░░░   ',
+    '██      ',
+    '██      ',
+    '░░      ',
+  ],
+  S: [
+    '░█████▓░',
+    '██░░░░░ ',
+    '░████▓░ ',
+    ' ░░░░██░',
+    '     ██░',
+    '█████▓░ ',
+    '░░░░░░░ ',
+  ],
+  C: [
+    '░█████▓░',
+    '██░░░░░ ',
+    '██      ',
+    '██      ',
+    '██░░░░  ',
+    '░█████▓░',
+    ' ░░░░░░░',
+  ],
+  I: [
+    '██▓░',
+    '██░ ',
+    '██░ ',
+    '██░ ',
+    '██░ ',
+    '██▓░',
+    '░░░ ',
+  ],
+  N: [
+    '██▓░  ██▓░',
+    '███░  ██░ ',
+    '██▓█░ ██░ ',
+    '██░▓█░██░ ',
+    '██░ ▓███░ ',
+    '██░  ▓██▓░',
+    '░░░  ░░░░ ',
+  ],
+  T: [
+    '███████▓░',
+    '░░░██░░░ ',
+    '   ██░   ',
+    '   ██░   ',
+    '   ██░   ',
+    '   ██▓░  ',
+    '   ░░░   ',
+  ],
+}
+
+const COLOR_SEGMENTS = [
+  { start: 0, end: 3, type: 'blue' as const },
+  { start: 4, end: 6, type: 'red' as const },
+  { start: 7, end: 12, type: 'gradient' as const },
+]
+
+const buildSegmentedAscii = (
+  letters: string[],
+  gap: string
+): { lines: string[]; segments: Segment[][] } => {
+  const letterArrays = letters.map((char) => LETTERS[char] || LETTERS['I'])
+  const numLines = letterArrays[0].length
+  const lines: string[] = []
+  const allSegments: Segment[][] = []
+
+  for (let lineIdx = 0; lineIdx < numLines; lineIdx += 1) {
+    let currentPos = 0
+    const lineSegments: Segment[] = []
+    const lineParts: string[] = []
+
+    letterArrays.forEach((arr, letterIdx) => {
+      const letterLine = arr[lineIdx]
+      const letterStart = currentPos
+
+      lineParts.push(letterLine)
+      currentPos += letterLine.length
+
+      if (letterIdx < letterArrays.length - 1) {
+        lineParts.push(gap)
+        currentPos += gap.length
+      }
+
+      const colorSegment = COLOR_SEGMENTS.find(
+        (segment) => letterIdx >= segment.start && letterIdx <= segment.end
+      )
+      if (colorSegment) {
+        const lastSeg = lineSegments[lineSegments.length - 1]
+        if (lastSeg && lastSeg.type === colorSegment.type && lastSeg.end === letterStart) {
+          lastSeg.end = currentPos
+        } else {
+          lineSegments.push({
+            start: letterStart,
+            end: letterStart + letterLine.length,
+            type: colorSegment.type,
+          })
+        }
+      }
+    })
+
+    lines.push(lineParts.join(''))
+    allSegments.push(lineSegments)
+  }
+
+  return { lines, segments: allSegments }
+}
+
+const ASCII_LOGO = buildSegmentedAscii(WORD.split(''), '')
+
+const renderSegmentedLine = (line: string, segments: Segment[]) => {
+  const parts: ReactNode[] = []
+  const sortedSegments = [...segments].sort((a, b) => a.start - b.start)
+  let lastEnd = 0
+
+  sortedSegments.forEach((segment, index) => {
+    if (segment.start > lastEnd) {
+      parts.push(
+        <span key={`gap-${index}`}>{line.slice(lastEnd, segment.start)}</span>
+      )
+    }
+    const text = line.slice(segment.start, segment.end)
+    const className =
+      segment.type === 'blue'
+        ? 'ds-terminal-blue'
+        : segment.type === 'red'
+          ? 'ds-terminal-red'
+          : 'ds-terminal-gradient'
+    parts.push(
+      <span key={`seg-${index}`} className={className}>
+        {text}
+      </span>
+    )
+    lastEnd = segment.end
+  })
+
+  if (lastEnd < line.length) {
+    parts.push(<span key="tail">{line.slice(lastEnd)}</span>)
+  }
+
+  return <span>{parts}</span>
+}
+
+type HeroTerminalProps = {
+  className?: string
+  activeIndex?: number
+}
+
+export default function HeroTerminal({ className, activeIndex = 0 }: HeroTerminalProps) {
+  const safeIndex = Math.min(Math.max(activeIndex, 0), HERO_RESEARCH_STEPS.length - 1)
+  const activeStep = HERO_RESEARCH_STEPS[safeIndex] ?? HERO_RESEARCH_STEPS[0]
+  const lines = [...HERO_TERMINAL_INTRO, ...activeStep.terminal]
+  const statusLine = `MODE   remote    SYNC   connected    USER   guest`
+  const focusLine = `FOCUS  ${activeStep.title.toUpperCase()}`
+
+  return (
+    <div
+      className={cn(
+        'rounded-2xl border border-black/10 bg-white/60 shadow-[0_20px_50px_-30px_rgba(45,42,38,0.35)]',
+        'backdrop-blur-lg',
+        className
+      )}
+    >
+      <div className="flex items-center justify-between border-b border-black/10 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[#7E8B97]">
+        <span>DeepScientist CLI</span>
+        <span>Session 01</span>
+      </div>
+      <div className="rounded-b-2xl bg-[#1F1B19]/90 px-3 py-3 font-mono text-[11px] leading-relaxed text-[#E6E2DA]">
+        <div className="ds-terminal-ascii space-y-0.5 overflow-hidden text-[8px]">
+          {ASCII_LOGO.lines.map((line, idx) => (
+            <div key={`ascii-${idx}`} className="whitespace-pre leading-[0.9]">
+              {renderSegmentedLine(line, ASCII_LOGO.segments[idx])}
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 space-y-0.5 text-[10px] text-[#A59E95]">
+          <div className="whitespace-pre">{statusLine}</div>
+          <div className="whitespace-pre text-[#7E8B97]">{focusLine}</div>
+        </div>
+        <div key={activeStep.id} className="ds-terminal-block mt-3 space-y-1">
+          {lines.map((line, index) => {
+            const trimmed = line.trim()
+            const isCommand = trimmed.startsWith('>')
+            const isComment = trimmed.startsWith('#') || trimmed.startsWith('//')
+            const lineClass = cn(
+              'ds-terminal-line',
+              isCommand && 'text-[#C8B27A]',
+              isComment && 'text-[#9FB1C2]'
+            )
+
+            return (
+              <div key={`${line}-${index}`} className={lineClass}>
+                {line || <span className="opacity-40">&nbsp;</span>}
+              </div>
+            )
+          })}
+          <div className="flex items-center gap-1 text-[#C8B27A]">
+            <span>&gt;</span>
+            <span className="ds-terminal-cursor">|</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..shared import require_yaml
+from ..memory.frontmatter import load_markdown_document
 
 
 @dataclass(frozen=True)
@@ -13,27 +13,27 @@ class SkillBundle:
     description: str
     root: Path
     skill_md: Path
+    openai_yaml: Path | None = None
+    claude_md: Path | None = None
 
 
 def _parse_frontmatter(path: Path) -> dict:
-    require_yaml()
-    import yaml
-
-    text = path.read_text(encoding="utf-8")
-    if not text.startswith("---\n"):
+    metadata, _body = load_markdown_document(path)
+    if not isinstance(metadata, dict):
         return {}
-    _, frontmatter, _rest = text.split("---\n", 2)
-    return yaml.safe_load(frontmatter) or {}
+    return metadata
 
 
 def discover_skill_bundles(repo_root: Path) -> list[SkillBundle]:
-    skills_root = repo_root / "skills"
     bundles: list[SkillBundle] = []
+    skills_root = repo_root / "src" / "skills"
     if not skills_root.exists():
         return bundles
     for skill_md in sorted(skills_root.glob("*/SKILL.md")):
-        metadata = _parse_frontmatter(skill_md)
         skill_id = skill_md.parent.name
+        if skill_id.startswith("."):
+            continue
+        metadata = _parse_frontmatter(skill_md)
         bundles.append(
             SkillBundle(
                 skill_id=skill_id,
@@ -41,6 +41,8 @@ def discover_skill_bundles(repo_root: Path) -> list[SkillBundle]:
                 description=metadata.get("description", ""),
                 root=skill_md.parent,
                 skill_md=skill_md,
+                openai_yaml=(skill_md.parent / "agents" / "openai.yaml") if (skill_md.parent / "agents" / "openai.yaml").exists() else None,
+                claude_md=(skill_md.parent / "agents" / "claude.md") if (skill_md.parent / "agents" / "claude.md").exists() else None,
             )
         )
     return bundles

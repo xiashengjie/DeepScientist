@@ -12,9 +12,16 @@ authors = [
   { name = "OpenAI Codex" }
 ]
 dependencies = [
+  "cryptography>=42,<46",
   "mcp>=1.19,<2",
   "Pillow>=10,<12",
-  "PyYAML>=6,<7"
+  "PyYAML>=6,<7",
+  "websockets>=15,<16"
+]
+
+[project.optional-dependencies]
+acp = [
+  "agent-client-protocol>=0.8,<1",
 ]
 
 [project.scripts]
@@ -25,3 +32,5 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["deepscientist", "deepscientist.*"]
+namespaces = false

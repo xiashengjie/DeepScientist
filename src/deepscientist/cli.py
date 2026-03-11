@@ -3,9 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import webbrowser
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from .artifact import ArtifactService
 from .config import ConfigManager
@@ -15,11 +19,16 @@ from .memory import MemoryService
 from .prompts import PromptBuilder
 from .quest import QuestService
 from .registries import BaselineRegistry
-from .runners import CodexRunner, RunRequest
+from .runners import CodexRunner, RunRequest, get_runner_factory, register_builtin_runners
 from .runtime_logs import JsonlLogger
 from .shared import ensure_dir, read_yaml
 from .skills import SkillInstaller
-from .tui import render_tui
+from .tui import watch_tui
+
+
+def _local_ui_url(host: str, port: int) -> str:
+    connect_host = "0.0.0.0" if host in {"0.0.0.0", "::", ""} else host
+    return f"http://{connect_host}:{port}"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -125,6 +134,10 @@ def new_command(home: Path, goal: str, quest_id: str | None) -> int:
     ensure_home_layout(home)
     config_manager = ConfigManager(home)
     config_manager.ensure_files()
+    payload = _daemon_create_quest(home, goal=goal, quest_id=quest_id)
+    if payload is not None:
+        print(json.dumps(payload.get("snapshot") or payload, ensure_ascii=False, indent=2))
+        return 0 if payload.get("ok", True) else 1
     installer = SkillInstaller(repo_root(), home)
     quest_service = QuestService(home, skill_installer=installer)
     snapshot = quest_service.create(goal=goal, quest_id=quest_id)
@@ -142,15 +155,57 @@ def status_command(home: Path, quest_id: str | None) -> int:
 
 
 def pause_command(home: Path, quest_id: str) -> int:
+    payload = _daemon_control_quest(home, quest_id, action="pause")
+    if payload is not None:
+        print(json.dumps(payload.get("snapshot") or payload, ensure_ascii=False, indent=2))
+        return 0 if payload.get("ok", True) else 1
     snapshot = QuestService(home).set_status(quest_id, "paused")
     print(json.dumps(snapshot, ensure_ascii=False, indent=2))
     return 0
 
 
 def resume_command(home: Path, quest_id: str) -> int:
+    payload = _daemon_control_quest(home, quest_id, action="resume")
+    if payload is not None:
+        print(json.dumps(payload.get("snapshot") or payload, ensure_ascii=False, indent=2))
+        return 0 if payload.get("ok", True) else 1
     snapshot = QuestService(home).set_status(quest_id, "active")
     print(json.dumps(snapshot, ensure_ascii=False, indent=2))
     return 0
+
+
+def _daemon_control_quest(home: Path, quest_id: str, *, action: str) -> dict | None:
+    config = ConfigManager(home).load_named("config", create_optional=False)
+    ui_config = config.get("ui", {})
+    url = f"{_local_ui_url(str(ui_config.get('host', '0.0.0.0')), int(ui_config.get('port', 20999)))}/api/quests/{quest_id}/control"
+    request = Request(
+        url,
+        data=json.dumps({"action": action, "source": "cli"}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=3) as response:  # noqa: S310
+            return json.loads(response.read().decode("utf-8"))
+    except (OSError, TimeoutError, URLError, ValueError):
+        return None
+
+
+def _daemon_create_quest(home: Path, *, goal: str, quest_id: str | None) -> dict | None:
+    config = ConfigManager(home).load_named("config", create_optional=False)
+    ui_config = config.get("ui", {})
+    url = f"{_local_ui_url(str(ui_config.get('host', '0.0.0.0')), int(ui_config.get('port', 20999)))}/api/quests"
+    request = Request(
+        url,
+        data=json.dumps({"goal": goal, "quest_id": quest_id, "source": "cli"}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=3) as response:  # noqa: S310
+            return json.loads(response.read().decode("utf-8"))
+    except (OSError, TimeoutError, URLError, ValueError):
+        return None
 
 
 def daemon_command(home: Path, host: str | None, port: int | None) -> int:
@@ -160,7 +215,7 @@ def daemon_command(home: Path, host: str | None, port: int | None) -> int:
     config = config_manager.load_named("config")
     ui_config = config.get("ui", {})
     daemon = DaemonApp(home)
-    daemon.serve(host or ui_config.get("host", "127.0.0.1"), port or ui_config.get("port", 20888))
+    daemon.serve(host or ui_config.get("host", "0.0.0.0"), port or ui_config.get("port", 20999))
     return 0
 
 
@@ -181,23 +236,45 @@ def run_command(home: Path, quest_id: str, skill_id: str, message: str, model: s
         prompt_builder=PromptBuilder(repo_root(), home),
         artifact_service=ArtifactService(home),
     )
+    register_builtin_runners(codex_runner=runner)
+    runner_name = str(config.get("default_runner", "codex")).strip().lower()
+    runner_cfg = runners.get(runner_name, {})
+    if runner_cfg.get("enabled") is False:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "message": f"Runner `{runner_name}` is disabled in `runners.yaml`.",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1
+    try:
+        selected_runner = get_runner_factory(runner_name)(home=home, config=runner_cfg)
+    except KeyError as exc:
+        print(json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False, indent=2))
+        return 1
     request = RunRequest(
         quest_id=quest_id,
         quest_root=quest_root,
+        worktree_root=QuestService(home).active_workspace_root(quest_root),
         run_id=f"run-{skill_id}-{quest_id[-4:]}",
         skill_id=skill_id,
         message=message,
-        model=model or codex_cfg.get("model", "gpt-5.4"),
-        approval_policy=codex_cfg.get("approval_policy", "on-request"),
-        sandbox_mode=codex_cfg.get("sandbox_mode", "workspace-write"),
+        model=model or runner_cfg.get("model", codex_cfg.get("model", "gpt-5.4")),
+        approval_policy=runner_cfg.get("approval_policy", codex_cfg.get("approval_policy", "on-request")),
+        sandbox_mode=runner_cfg.get("sandbox_mode", codex_cfg.get("sandbox_mode", "workspace-write")),
     )
-    result = runner.run(request)
+    result = selected_runner.run(request)
     if result.output_text:
-        QuestService(home).append_message(quest_id, role="assistant", content=result.output_text, source="codex")
+        QuestService(home).append_message(quest_id, role="assistant", content=result.output_text, source=runner_name)
     print(
         json.dumps(
             {
                 "ok": result.ok,
+                "runner": runner_name,
                 "run_id": result.run_id,
                 "model": result.model,
                 "exit_code": result.exit_code,
@@ -213,16 +290,38 @@ def run_command(home: Path, quest_id: str, skill_id: str, message: str, model: s
     return 0 if result.ok else 1
 
 
+def launch_ink_tui(home: Path, url: str) -> int:
+    node_binary = shutil.which("node")
+    if node_binary is None:
+        watch_tui(url)
+        return 0
+    entry = repo_root() / "src" / "tui" / "dist" / "index.js"
+    if not entry.exists():
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "message": "Ink TUI bundle is missing. Run `npm --prefix src/tui install && npm --prefix src/tui run build` first.",
+                    "entry": str(entry),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1
+    return subprocess.call([node_binary, str(entry), "--base-url", url])
+
+
 def ui_command(home: Path, mode: str) -> int:
     config = ConfigManager(home).load_named("config", create_optional=False)
-    host = config.get("ui", {}).get("host", "127.0.0.1")
-    port = config.get("ui", {}).get("port", 20888)
-    url = f"http://{host}:{port}"
+    host = config.get("ui", {}).get("host", "0.0.0.0")
+    port = config.get("ui", {}).get("port", 20999)
+    url = _local_ui_url(host, port)
     if mode in {"web", "both"}:
         webbrowser.open(url)
         print(f"Opened {url}")
     if mode in {"tui", "both"}:
-        print(render_tui(url))
+        return launch_ink_tui(home, url)
     return 0
 
 
@@ -311,9 +410,8 @@ def baseline_list_command(home: Path) -> int:
 
 
 def baseline_attach_command(home: Path, quest_id: str, baseline_id: str, variant_id: str | None) -> int:
-    registry = BaselineRegistry(home)
-    attachment = registry.attach(home / "quests" / quest_id, baseline_id, variant_id)
-    print(json.dumps(attachment, ensure_ascii=False, indent=2))
+    result = ArtifactService(home).attach_baseline(home / "quests" / quest_id, baseline_id, variant_id)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 

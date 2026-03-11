@@ -6,6 +6,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from ..artifact import ArtifactService
+from ..bash_exec import BashExecService
 from ..memory import MemoryService
 from .context import McpContext
 
@@ -27,6 +28,7 @@ def build_memory_server(context: McpContext) -> FastMCP:
         scope: str = "quest",
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        comment: str | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         resolved_scope = _resolve_scope(context, scope)
         quest_root = context.require_quest_root() if resolved_scope == "quest" else None
@@ -47,6 +49,7 @@ def build_memory_server(context: McpContext) -> FastMCP:
         card_id: str | None = None,
         path: str | None = None,
         scope: str = "quest",
+        comment: str | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         resolved_scope = _resolve_scope(context, scope)
         quest_root = context.require_quest_root() if resolved_scope == "quest" else None
@@ -58,6 +61,7 @@ def build_memory_server(context: McpContext) -> FastMCP:
         scope: str = "quest",
         limit: int = 10,
         kind: str | None = None,
+        comment: str | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         resolved_scope = _resolve_search_scope(context, scope)
         quest_root = context.quest_root if resolved_scope in {"quest", "both"} else None
@@ -69,6 +73,7 @@ def build_memory_server(context: McpContext) -> FastMCP:
         scope: str = "quest",
         limit: int = 10,
         kind: str | None = None,
+        comment: str | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         resolved_scope = _resolve_search_scope(context, scope)
         if resolved_scope == "both":
@@ -81,7 +86,11 @@ def build_memory_server(context: McpContext) -> FastMCP:
         return {"ok": True, "count": len(items), "items": items}
 
     @server.tool(name="promote_to_global", description="Promote a quest memory card into global memory.")
-    def promote_to_global(card_id: str | None = None, path: str | None = None) -> dict[str, Any]:
+    def promote_to_global(
+        card_id: str | None = None,
+        path: str | None = None,
+        comment: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return service.promote_to_global(card_id=card_id, path=path, quest_root=context.require_quest_root())
 
     return server
@@ -96,8 +105,10 @@ def build_artifact_server(context: McpContext) -> FastMCP:
     )
 
     @server.tool(name="record", description="Write a structured artifact record under the current quest.")
-    def record(payload: dict[str, Any]) -> dict[str, Any]:
+    def record(payload: dict[str, Any], comment: str | dict[str, Any] | None = None) -> dict[str, Any]:
         enriched = dict(payload)
+        if comment is not None and "comment" not in enriched:
+            enriched["comment"] = comment
         if context.run_id and "run_id" not in enriched:
             enriched["run_id"] = context.run_id
         if context.active_anchor and "anchor" not in enriched:
@@ -109,11 +120,23 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             if context.run_id:
                 source.setdefault("run_id", context.run_id)
             enriched["source"] = source
-        return service.record(context.require_quest_root(), enriched)
+        return service.record(
+            context.require_quest_root(),
+            enriched,
+            workspace_root=context.worktree_root,
+        )
 
     @server.tool(name="checkpoint", description="Create a Git checkpoint in the current quest repository.")
-    def checkpoint(message: str, allow_empty: bool = False) -> dict[str, Any]:
-        return service.checkpoint(context.require_quest_root(), message, allow_empty=allow_empty)
+    def checkpoint(
+        message: str,
+        allow_empty: bool = False,
+        comment: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return service.checkpoint(
+            context.worktree_root or context.require_quest_root(),
+            message,
+            allow_empty=allow_empty,
+        )
 
     @server.tool(name="prepare_branch", description="Prepare an idea or run branch and optional worktree.")
     def prepare_branch(
@@ -123,6 +146,7 @@ def build_artifact_server(context: McpContext) -> FastMCP:
         branch_kind: str = "run",
         create_worktree_flag: bool = True,
         start_point: str | None = None,
+        comment: str | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return service.prepare_branch(
             context.require_quest_root(),
@@ -134,22 +158,196 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             start_point=start_point,
         )
 
+    @server.tool(
+        name="submit_idea",
+        description=(
+            "Create or revise the active research idea. "
+            "mode=create creates the idea branch/worktree and idea.md. "
+            "mode=revise updates the existing active idea.md without creating a new branch."
+        ),
+    )
+    def submit_idea(
+        mode: str = "create",
+        idea_id: str | None = None,
+        title: str = "",
+        problem: str = "",
+        hypothesis: str = "",
+        mechanism: str = "",
+        expected_gain: str = "",
+        evidence_paths: list[str] | None = None,
+        risks: list[str] | None = None,
+        decision_reason: str = "",
+        next_target: str = "experiment",
+        comment: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return service.submit_idea(
+            context.require_quest_root(),
+            mode=mode,
+            idea_id=idea_id,
+            title=title,
+            problem=problem,
+            hypothesis=hypothesis,
+            mechanism=mechanism,
+            expected_gain=expected_gain,
+            evidence_paths=evidence_paths,
+            risks=risks,
+            decision_reason=decision_reason,
+            next_target=next_target,
+        )
+
+    @server.tool(
+        name="record_main_experiment",
+        description=(
+            "Record the completed main experiment on the active idea workspace. "
+            "This writes RUN.md and RESULT.json, compares metrics to the attached baseline, "
+            "derives breakthrough status, and notifies bound conversations."
+        ),
+    )
+    def record_main_experiment(
+        run_id: str,
+        title: str = "",
+        hypothesis: str = "",
+        setup: str = "",
+        execution: str = "",
+        results: str = "",
+        conclusion: str = "",
+        metric_rows: list[dict[str, Any]] | None = None,
+        metrics_summary: dict[str, Any] | None = None,
+        metric_contract: dict[str, Any] | None = None,
+        evidence_paths: list[str] | None = None,
+        changed_files: list[str] | None = None,
+        config_paths: list[str] | None = None,
+        notes: list[str] | None = None,
+        dataset_scope: str = "full",
+        verdict: str = "",
+        status: str = "completed",
+        baseline_id: str | None = None,
+        baseline_variant_id: str | None = None,
+        comment: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return service.record_main_experiment(
+            context.require_quest_root(),
+            run_id=run_id,
+            title=title,
+            hypothesis=hypothesis,
+            setup=setup,
+            execution=execution,
+            results=results,
+            conclusion=conclusion,
+            metric_rows=metric_rows,
+            metrics_summary=metrics_summary,
+            metric_contract=metric_contract,
+            evidence_paths=evidence_paths,
+            changed_files=changed_files,
+            config_paths=config_paths,
+            notes=notes,
+            dataset_scope=dataset_scope,
+            verdict=verdict,
+            status=status,
+            baseline_id=baseline_id,
+            baseline_variant_id=baseline_variant_id,
+        )
+
+    @server.tool(
+        name="create_analysis_campaign",
+        description=(
+            "Create a structured analysis campaign from the active idea branch. "
+            "Each slice receives its own branch/worktree and explicit requirements."
+        ),
+    )
+    def create_analysis_campaign(
+        campaign_title: str,
+        campaign_goal: str,
+        slices: list[dict[str, Any]],
+        parent_run_id: str | None = None,
+        comment: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return service.create_analysis_campaign(
+            context.require_quest_root(),
+            campaign_title=campaign_title,
+            campaign_goal=campaign_goal,
+            parent_run_id=parent_run_id or context.run_id,
+            slices=slices,
+        )
+
+    @server.tool(
+        name="record_analysis_slice",
+        description=(
+            "Record the full setup, execution, and result for one analysis slice. "
+            "This also mirrors the result back to the parent experiment branch and moves to the next slice automatically."
+        ),
+    )
+    def record_analysis_slice(
+        campaign_id: str,
+        slice_id: str,
+        status: str = "completed",
+        setup: str = "",
+        execution: str = "",
+        results: str = "",
+        evidence_paths: list[str] | None = None,
+        metric_rows: list[dict[str, Any]] | None = None,
+        deviations: list[str] | None = None,
+        dataset_scope: str = "full",
+        subset_approval_ref: str | None = None,
+        comment: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return service.record_analysis_slice(
+            context.require_quest_root(),
+            campaign_id=campaign_id,
+            slice_id=slice_id,
+            status=status,
+            setup=setup,
+            execution=execution,
+            results=results,
+            evidence_paths=evidence_paths,
+            metric_rows=metric_rows,
+            deviations=deviations,
+            dataset_scope=dataset_scope,
+            subset_approval_ref=subset_approval_ref,
+        )
+
     @server.tool(name="publish_baseline", description="Publish a quest baseline to the global baseline registry.")
-    def publish_baseline(payload: dict[str, Any]) -> dict[str, Any]:
+    def publish_baseline(
+        payload: dict[str, Any],
+        comment: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         enriched = dict(payload)
+        if comment is not None and "comment" not in enriched:
+            enriched["comment"] = comment
         enriched.setdefault("source", {"kind": "artifact_publish", "quest_id": context.quest_id, "quest_root": str(context.require_quest_root())})
         return service.publish_baseline(context.require_quest_root(), enriched)
 
     @server.tool(name="attach_baseline", description="Attach a published baseline to the current quest.")
-    def attach_baseline(baseline_id: str, variant_id: str | None = None) -> dict[str, Any]:
+    def attach_baseline(
+        baseline_id: str,
+        variant_id: str | None = None,
+        comment: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return service.attach_baseline(context.require_quest_root(), baseline_id, variant_id)
 
+    @server.tool(
+        name="arxiv",
+        description=(
+            "Read an identified arXiv paper by id. "
+            "Use full_text=false for the overview/abstract path and full_text=true when the full paper body is needed."
+        ),
+    )
+    def arxiv(
+        paper_id: str,
+        full_text: bool = False,
+        comment: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return service.arxiv(paper_id, full_text=full_text)
+
     @server.tool(name="refresh_summary", description="Refresh SUMMARY.md from recent artifact state.")
-    def refresh_summary(reason: str | None = None) -> dict[str, Any]:
+    def refresh_summary(
+        reason: str | None = None,
+        comment: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return service.refresh_summary(context.require_quest_root(), reason=reason)
 
     @server.tool(name="render_git_graph", description="Render the quest Git graph to JSON, SVG, and PNG.")
-    def render_git_graph() -> dict[str, Any]:
+    def render_git_graph(comment: str | dict[str, Any] | None = None) -> dict[str, Any]:
         return service.render_git_graph(context.require_quest_root())
 
     @server.tool(name="interact", description="Send a structured user-facing update and optionally fetch new inbound messages.")
@@ -162,6 +360,15 @@ def build_artifact_server(context: McpContext) -> FastMCP:
         include_recent_inbound_messages: bool = True,
         recent_message_limit: int = 8,
         attachments: list[dict[str, Any]] | None = None,
+        interaction_id: str | None = None,
+        expects_reply: bool | None = None,
+        reply_mode: str | None = None,
+        options: list[dict[str, Any]] | None = None,
+        allow_free_text: bool = True,
+        reply_schema: dict[str, Any] | None = None,
+        reply_to_interaction_id: str | None = None,
+        supersede_open_requests: bool = True,
+        comment: str | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return service.interact(
             context.require_quest_root(),
@@ -173,6 +380,125 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             include_recent_inbound_messages=include_recent_inbound_messages,
             recent_message_limit=recent_message_limit,
             attachments=attachments,
+            interaction_id=interaction_id,
+            expects_reply=expects_reply,
+            reply_mode=reply_mode,
+            options=options,
+            allow_free_text=allow_free_text,
+            reply_schema=reply_schema,
+            reply_to_interaction_id=reply_to_interaction_id,
+            supersede_open_requests=supersede_open_requests,
+        )
+
+    return server
+
+
+def build_bash_exec_server(context: McpContext) -> FastMCP:
+    service = BashExecService(context.home)
+    server = FastMCP(
+        "bash_exec",
+        instructions="Quest-aware DeepScientist bash execution namespace with detached execution, durable logs, and progress tracking.",
+        log_level="ERROR",
+    )
+
+    @server.tool(
+        name="bash_exec",
+        description=(
+            "Execute a bash command inside the current quest. "
+            "mode=detach returns immediately. mode=await/create waits for completion. "
+            "mode=read returns the saved log. mode=kill requests termination. "
+            "mode=list shows known quest-local bash sessions."
+        ),
+    )
+    def bash_exec(
+        command: str = "",
+        mode: str = "detach",
+        id: str | None = None,
+        reason: str | None = None,
+        workdir: str | None = None,
+        env: dict[str, Any] | None = None,
+        export_log: bool = False,
+        export_log_to: str | None = None,
+        timeout_seconds: int | None = None,
+        status: str | None = None,
+        agent_ids: list[str] | None = None,
+        agent_instance_ids: list[str] | None = None,
+        chat_session_id: str | None = None,
+        limit: int = 20,
+        comment: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        quest_root = context.require_quest_root().resolve()
+        normalized_mode = (mode or "detach").strip().lower()
+        if normalized_mode == "create":
+            normalized_mode = "await"
+        if normalized_mode not in {"detach", "await", "read", "kill", "list"}:
+            raise ValueError("Mode must be one of `detach`, `await`, `create`, `read`, `kill`, or `list`.")
+        if normalized_mode == "list":
+            items = service.list_sessions(
+                quest_root,
+                status=status,
+                agent_ids=agent_ids,
+                agent_instance_ids=agent_instance_ids,
+                chat_session_id=chat_session_id,
+                limit=max(1, min(limit, 500)),
+            )
+            counts: dict[str, int] = {}
+            for item in items:
+                item_status = str(item.get("status") or "unknown")
+                counts[item_status] = counts.get(item_status, 0) + 1
+            return {
+                "count": len(items),
+                "items": items,
+                "status_counts": counts,
+            }
+        if normalized_mode == "read":
+            bash_id = service.resolve_session_id(quest_root, id)
+            session = service.get_session(quest_root, bash_id)
+            return service.build_tool_result(
+                context,
+                session=session,
+                include_log=True,
+                export_log=export_log,
+                export_log_to=export_log_to,
+            )
+        if normalized_mode == "kill":
+            bash_id = service.resolve_session_id(quest_root, id)
+            session = service.request_stop(
+                quest_root,
+                bash_id,
+                reason=reason,
+                user_id=f"agent:{context.agent_role or 'pi'}",
+            )
+            return service.build_tool_result(context, session=session, include_log=False)
+        if normalized_mode == "await" and not command:
+            bash_id = service.resolve_session_id(quest_root, id)
+            session = service.wait_for_session(quest_root, bash_id, timeout_seconds=timeout_seconds)
+            return service.build_tool_result(
+                context,
+                session=session,
+                include_log=False,
+                export_log=export_log,
+                export_log_to=export_log_to,
+            )
+        if not (command or "").strip():
+            raise ValueError("command is required for `detach` and `await`.")
+        session = service.start_session(
+            context,
+            command=command,
+            mode=normalized_mode,
+            workdir=workdir,
+            env=env,
+            timeout_seconds=timeout_seconds,
+        )
+        if normalized_mode == "detach":
+            return service.build_tool_result(context, session=session, include_log=False)
+        session = service.wait_for_session(quest_root, str(session["bash_id"]), timeout_seconds=timeout_seconds)
+        return service.build_tool_result(
+            context,
+            session=session,
+            include_log=False,
+            export_log=export_log,
+            export_log_to=export_log_to,
         )
 
     return server
@@ -198,13 +524,15 @@ def _resolve_search_scope(context: McpContext, scope: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="DeepScientist built-in MCP server")
-    parser.add_argument("--namespace", choices=("memory", "artifact"), required=True)
+    parser.add_argument("--namespace", choices=("memory", "artifact", "bash_exec"), required=True)
     args = parser.parse_args()
     context = McpContext.from_env()
     if args.namespace == "memory":
         build_memory_server(context).run("stdio")
-    else:
+    elif args.namespace == "artifact":
         build_artifact_server(context).run("stdio")
+    else:
+        build_bash_exec_server(context).run("stdio")
     return 0
 
 

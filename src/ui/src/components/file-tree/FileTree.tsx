@@ -1,0 +1,610 @@
+"use client";
+
+import * as React from "react";
+import { Tree, TreeApi } from "react-arborist";
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
+import { Loader2, Upload } from "lucide-react";
+import type { FileNode } from "@/lib/types/file";
+import { useFileTreeStore, useHighlightedFile } from "@/lib/stores/file-tree";
+import { FileTreeNode } from "./FileTreeNode";
+import { FileTreeContextMenu } from "./FileTreeContextMenu";
+import { CreateFileDialog } from "./CreateFileDialog";
+import { CreateLatexProjectDialog } from "./CreateLatexProjectDialog";
+import { FileTreeDragContext } from "./FileTreeDragContext";
+import { FileTreeDragPreview } from "./FileTreeDragPreview";
+import { Icon3D } from "@/components/ui/icon-3d";
+import { ConfirmModal } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
+import { cn } from "@/lib/utils";
+import { compileLatex } from "@/lib/api/latex";
+
+/**
+ * FileTree props
+ */
+export interface FileTreeProps {
+  /** Project ID to load files for */
+  projectId: string;
+
+  /** Callback when a file is double-clicked */
+  onFileOpen?: (file: FileNode) => void;
+
+  /** Callback when file download is requested */
+  onFileDownload?: (file: FileNode) => void;
+
+  /** Additional class names */
+  className?: string;
+
+  /** Height of the tree (defaults to 100%) */
+  height?: number | string;
+
+  /** When true, disables all mutating actions (drag/rename/create/upload/delete). */
+  readOnly?: boolean;
+
+  /** When true, hide files/folders starting with a dot (.) */
+  hideDotfiles?: boolean;
+}
+
+function filterDotfiles(nodes: FileNode[]): FileNode[] {
+  const filtered: FileNode[] = [];
+
+  for (const node of nodes) {
+    if (node.name.startsWith(".")) {
+      continue;
+    }
+
+    if (node.children && node.children.length > 0) {
+      const nextChildren = filterDotfiles(node.children);
+      const childrenChanged =
+        nextChildren.length !== node.children.length ||
+        nextChildren.some((child, index) => child !== node.children![index]);
+
+      filtered.push(childrenChanged ? { ...node, children: nextChildren } : node);
+      continue;
+    }
+
+    filtered.push(node);
+  }
+
+  return filtered;
+}
+
+/**
+ * FileTree - Main file tree component
+ *
+ * Uses react-arborist for virtualized, drag-and-drop tree rendering.
+ *
+ * Features:
+ * - Virtualized rendering for large file trees
+ * - Drag and drop to reorder/move files
+ * - External file drop to upload
+ * - Right-click context menu
+ * - Keyboard navigation
+ * - Inline renaming
+ */
+export function FileTree({
+  projectId,
+  onFileOpen,
+  onFileDownload,
+  className,
+  height = "100%",
+  readOnly = false,
+  hideDotfiles = false,
+}: FileTreeProps) {
+  const treeRef = React.useRef<TreeApi<FileNode>>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const { addToast } = useToast();
+
+  const {
+    nodes,
+    isLoading,
+    error,
+    loadFiles,
+    projectId: loadedProjectId,
+    move,
+    rename,
+    findNode,
+    upload,
+  } = useFileTreeStore();
+
+  const highlightedFileId = useHighlightedFile();
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = React.useState<{
+    node: ReturnType<TreeApi<FileNode>["get"]>;
+    position: { x: number; y: number };
+  } | null>(null);
+
+  const [createFileState, setCreateFileState] = React.useState<{
+    open: boolean;
+    parentId: string | null;
+  }>({ open: false, parentId: null });
+
+  const [createLatexState, setCreateLatexState] = React.useState<{
+    open: boolean;
+    parentId: string | null;
+  }>({ open: false, parentId: null });
+
+  const [deleteState, setDeleteState] = React.useState<{
+    open: boolean;
+    node: FileNode | null;
+    loading: boolean;
+  }>({ open: false, node: null, loading: false });
+
+  const [dragArmedId, setDragArmedId] = React.useState<string | null>(null);
+
+  const dragContextValue = React.useMemo(
+    () => ({ armedId: dragArmedId, setArmedId: setDragArmedId, readOnly }),
+    [dragArmedId, readOnly]
+  );
+
+  // Drag-over state for external file drops
+  const [isDragOver, setIsDragOver] = React.useState(false);
+
+  // Calculate container dimensions
+  const [dimensions, setDimensions] = React.useState({ width: 240, height: 400 });
+
+  React.useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    const measureTarget = node.parentElement ?? node;
+    let rafId: number | null = null;
+
+    const updateDimensions = (rect?: DOMRectReadOnly) => {
+      const targetRect = rect ?? measureTarget.getBoundingClientRect();
+      const nextWidth = Math.round(targetRect.width);
+      const nextHeight = Math.round(
+        typeof height === "number" ? height : targetRect.height
+      );
+      const width = nextWidth || 240;
+      const resolvedHeight = nextHeight || 400;
+      setDimensions((prev) =>
+        prev.width === width && prev.height === resolvedHeight
+          ? prev
+          : { width, height: resolvedHeight }
+      );
+    };
+
+    const scheduleUpdate = (rect?: DOMRectReadOnly) => {
+      if (rafId != null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        updateDimensions(rect);
+      });
+    };
+
+    scheduleUpdate();
+    const observer = new ResizeObserver((entries) => {
+      scheduleUpdate(entries[0]?.contentRect);
+    });
+    observer.observe(measureTarget);
+
+    return () => {
+      if (rafId != null) window.cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, [height]);
+
+  // Load files on mount and when projectId changes
+  React.useEffect(() => {
+    if (loadedProjectId !== projectId) {
+      loadFiles(projectId);
+    }
+  }, [projectId, loadedProjectId, loadFiles]);
+
+  React.useEffect(() => {
+    if (readOnly && dragArmedId) {
+      setDragArmedId(null);
+    }
+  }, [readOnly, dragArmedId]);
+
+  // Reveal highlighted file (AI effect)
+  React.useEffect(() => {
+    if (!highlightedFileId || !treeRef.current) return;
+    treeRef.current.scrollTo(highlightedFileId, "center");
+  }, [highlightedFileId]);
+
+  // Handle move (drag and drop within tree)
+  const handleMove = React.useCallback(
+    async (args: {
+      dragIds: string[];
+      parentId: string | null;
+      index: number;
+    }) => {
+      if (readOnly) return;
+      try {
+        await move(args.dragIds, args.parentId);
+      } catch (error) {
+        console.error("Failed to move files:", error);
+        addToast({
+          type: "error",
+          title: "Move failed",
+          description: error instanceof Error ? error.message : "Unable to move files.",
+        });
+      }
+    },
+    [addToast, move, readOnly]
+  );
+
+  // Handle rename
+  const handleRename = React.useCallback(
+    async (args: { id: string; name: string }) => {
+      if (readOnly) return;
+      try {
+        await rename(args.id, args.name);
+      } catch (error) {
+        console.error("Failed to rename:", error);
+      }
+    },
+    [rename, readOnly]
+  );
+
+  // Handle double-click on row
+  const handleActivate = React.useCallback(
+    (node: ReturnType<TreeApi<FileNode>["get"]>) => {
+      if (
+        node &&
+        (node.data.type === "file" ||
+          node.data.type === "notebook" ||
+          (node.data.type === "folder" && node.data.folderKind === "latex")) &&
+        onFileOpen
+      ) {
+        onFileOpen(node.data);
+      }
+    },
+    [onFileOpen]
+  );
+
+  // Handle right-click
+  const handleContextMenu = React.useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+
+      // Find the node element
+      const nodeElement = (e.target as HTMLElement).closest("[data-node-id]");
+      if (!nodeElement) return;
+
+      const nodeId = nodeElement.getAttribute("data-node-id");
+      if (!nodeId || !treeRef.current) return;
+
+      const node = treeRef.current.get(nodeId);
+      if (!node) return;
+
+      // Select the node if not already selected
+      if (!node.isSelected) {
+        node.select();
+      }
+
+      setContextMenu({
+        node,
+        position: { x: e.clientX, y: e.clientY },
+      });
+    },
+    []
+  );
+
+  // Handle external file drop
+  const handleDrop = React.useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      if (readOnly) return;
+
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length === 0) return;
+
+      // Determine target folder
+      let targetParentId: string | null = null;
+
+      const nodeElement = (e.target as HTMLElement).closest("[data-node-id]");
+      if (nodeElement && treeRef.current) {
+        const nodeId = nodeElement.getAttribute("data-node-id");
+        if (nodeId) {
+          const node = treeRef.current.get(nodeId);
+          if (node) {
+            targetParentId =
+              node.data.type === "folder" ? node.data.id : node.data.parentId;
+          }
+        }
+      }
+
+      try {
+        await upload(targetParentId, files);
+      } catch (error) {
+        console.error("Upload failed:", error);
+      }
+    },
+    [upload, readOnly]
+  );
+
+  const findLatexFolderForFile = React.useCallback(
+    (file: FileNode): FileNode | null => {
+      let currentId: string | null = file.parentId;
+      while (currentId) {
+        const parent = findNode(currentId);
+        if (!parent) return null;
+        if (parent.type === "folder" && parent.folderKind === "latex") {
+          return parent;
+        }
+        currentId = parent.parentId;
+      }
+      return null;
+    },
+    [findNode]
+  );
+
+  const handleCompileLatexSource = React.useCallback(
+    async (node: FileNode) => {
+      if (readOnly) return;
+      if (node.type !== "file" || !node.name.toLowerCase().endsWith(".tex")) return;
+
+      const folder = findLatexFolderForFile(node);
+      if (!folder) {
+        addToast({
+          type: "error",
+          title: "LaTeX compile failed",
+          description: "This file is not inside a LaTeX project folder.",
+        });
+        return;
+      }
+
+      try {
+        const build = await compileLatex(projectId, folder.id, {
+          main_file_id: node.id,
+          stop_on_first_error: false,
+        });
+        addToast({
+          type: "success",
+          title: "LaTeX compile started",
+          description: `${folder.name} · ${node.name}`,
+          duration: 1800,
+        });
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("ds:latex-build", {
+              detail: {
+                projectId,
+                folderId: folder.id,
+                buildId: build.build_id,
+                status: build.status,
+                errorMessage: build.error_message ?? null,
+              },
+            })
+          );
+        }
+      } catch (error) {
+        console.error("Failed to compile LaTeX file:", error);
+        addToast({
+          type: "error",
+          title: "LaTeX compile failed",
+          description: error instanceof Error ? error.message : "Please try again.",
+        });
+      }
+    },
+    [addToast, findLatexFolderForFile, projectId, readOnly]
+  );
+
+  const handleDragOver = React.useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.types.includes("Files")) {
+      if (!readOnly) setIsDragOver(true);
+    }
+  }, [readOnly]);
+
+  const handleDragLeave = React.useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    // Only set to false if leaving the container entirely
+    if (!containerRef.current?.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const visibleNodes = React.useMemo(
+    () => (hideDotfiles ? filterDotfiles(nodes) : nodes),
+    [hideDotfiles, nodes]
+  );
+
+  const showLoadingState = isLoading && nodes.length === 0;
+  const showEmptyState = !isLoading && !error && visibleNodes.length === 0;
+
+  return (
+    <div
+      ref={containerRef}
+      className={cn(
+        "file-tree h-full relative",
+        isDragOver && "bg-white/[0.03] ring-1 ring-inset ring-white/15",
+        className
+      )}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onContextMenu={handleContextMenu}
+    >
+      {showLoadingState ? (
+        <div className="flex h-full items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-[var(--file-tree-icon-muted)]" />
+        </div>
+      ) : error ? (
+        <div className="flex h-full flex-col items-center justify-center p-4 text-center">
+          <p className="mb-2 text-sm text-red-500">Failed to load files</p>
+          <p className="text-xs text-soft-text-muted">{error}</p>
+          <button
+            onClick={() => loadFiles(projectId)}
+            className="mt-4 rounded-soft-sm bg-soft-primary px-3 py-1.5 text-sm text-white transition-colors hover:bg-soft-primary/90"
+          >
+            Retry
+          </button>
+        </div>
+      ) : showEmptyState ? (
+        <div
+          className={cn(
+            "flex flex-col items-center justify-center h-full p-4 text-center",
+            "rounded-2xl",
+            "text-white/80",
+            isDragOver &&
+              "bg-white/[0.06] border border-dashed border-white/20 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
+          )}
+        >
+          <div className="mb-4">
+            <Icon3D name="folder-open" size="lg" className="opacity-95" />
+          </div>
+          <p className="text-sm font-medium mb-1">No files yet</p>
+          <p className="text-xs text-white/55 mb-4">
+            Drop files here, or upload a starter file to begin.
+          </p>
+          <div className="flex gap-2">
+            {!readOnly && (
+              <label className="px-3 py-1.5 text-sm bg-white/10 text-white rounded-lg hover:bg-white/15 transition-colors cursor-pointer border border-white/10">
+                <Upload className="h-4 w-4 inline mr-1" />
+                Upload
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    if (files.length > 0) {
+                      upload(null, files);
+                    }
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Drag overlay */}
+          {isDragOver && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-10 pointer-events-none">
+              <div className="flex flex-col items-center text-white">
+                <Icon3D name="upload" size="lg" className="opacity-95 mb-2" />
+                <span className="text-sm font-medium">Drop files to upload</span>
+              </div>
+            </div>
+          )}
+
+          {/* Tree */}
+          <FileTreeDragContext.Provider value={dragContextValue}>
+            <DndProvider backend={HTML5Backend}>
+              <Tree
+                ref={treeRef}
+                data={visibleNodes}
+                idAccessor="id"
+                childrenAccessor="children"
+                openByDefault={false}
+                className="file-tree-scroll"
+                width={dimensions.width}
+                height={typeof dimensions.height === "number" ? dimensions.height : 400}
+                indent={16}
+                rowHeight={28}
+                paddingTop={4}
+                paddingBottom={4}
+                renderDragPreview={FileTreeDragPreview}
+                // Handlers
+                onMove={readOnly ? undefined : handleMove}
+                onRename={readOnly ? undefined : handleRename}
+                onActivate={handleActivate}
+                // Require long-press to arm dragging
+                disableDrag={(data) => readOnly || dragArmedId !== data.id}
+                // Only folders can receive drops
+                disableDrop={(args) =>
+                  args.parentNode !== null && args.parentNode.data.type !== "folder"
+                }
+              >
+                {FileTreeNode}
+              </Tree>
+            </DndProvider>
+          </FileTreeDragContext.Provider>
+        </>
+      )}
+
+      {/* Context menu */}
+      {contextMenu && (
+        <FileTreeContextMenu
+          node={contextMenu.node!}
+          position={contextMenu.position}
+          onClose={() => setContextMenu(null)}
+          onOpen={onFileOpen}
+          onDownload={onFileDownload}
+          onNewFile={(parentId) => {
+            setCreateFileState({ open: true, parentId });
+          }}
+          onNewLatexProject={(parentId) => {
+            setCreateLatexState({ open: true, parentId });
+          }}
+          onCompileLatexSource={handleCompileLatexSource}
+          onRequestDelete={(node) => {
+            setDeleteState({ open: true, node, loading: false });
+          }}
+          readOnly={readOnly}
+        />
+      )}
+
+      {/* New file dialog */}
+      {!readOnly && (
+        <CreateFileDialog
+          open={createFileState.open}
+          parentId={createFileState.parentId}
+          onOpenChange={(open) =>
+            setCreateFileState((prev) => ({ ...prev, open }))
+          }
+          onCreated={(file) => {
+            onFileOpen?.(file);
+            treeRef.current?.scrollTo(file.id, "center");
+          }}
+        />
+      )}
+
+      {!readOnly && (
+        <CreateLatexProjectDialog
+          open={createLatexState.open}
+          parentId={createLatexState.parentId}
+          onOpenChange={(open) =>
+            setCreateLatexState((prev) => ({ ...prev, open }))
+          }
+          onCreated={(folder) => {
+            onFileOpen?.(folder);
+            treeRef.current?.scrollTo(folder.id, "center");
+          }}
+        />
+      )}
+
+      {/* Delete confirmation */}
+      <ConfirmModal
+        open={deleteState.open}
+        onClose={() => setDeleteState({ open: false, node: null, loading: false })}
+        onConfirm={async () => {
+          const target = deleteState.node;
+          if (!target || deleteState.loading) return;
+          try {
+            setDeleteState((s) => ({ ...s, loading: true }));
+            await useFileTreeStore.getState().delete([target.id]);
+            setDeleteState({ open: false, node: null, loading: false });
+          } catch (err) {
+            console.error("Failed to delete:", err);
+            setDeleteState((s) => ({ ...s, loading: false }));
+          }
+        }}
+        title={
+          deleteState.node
+            ? `Delete ${deleteState.node.type === "folder" ? "folder" : "file"}`
+            : "Delete"
+        }
+        description={
+          deleteState.node
+            ? `“${deleteState.node.name}” will be moved to trash (soft delete).`
+            : "This item will be deleted."
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        loading={deleteState.loading}
+      />
+    </div>
+  );
+}
+
+export default FileTree;

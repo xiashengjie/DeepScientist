@@ -1,0 +1,136 @@
+import React, { useEffect, useState } from 'react'
+import { Box, Text } from 'ink'
+import { InputPrompt } from './InputPrompt.js'
+import { GradientStatusText } from './GradientStatusText.js'
+import { LoadingIndicator } from './LoadingIndicator.js'
+import { theme } from '../semantic-colors.js'
+import { useTerminalSize } from '../hooks/useTerminalSize.js'
+import { Footer } from './Footer.js'
+
+type ComposerProps = {
+  input: string
+  statusLine: string
+  suggestions?: Array<{ name: string; description: string }>
+  placeholder?: string
+  mode: 'home' | 'quest'
+  configMode?: 'browse' | 'edit' | null
+  selectionMode?: 'projects' | 'pause' | 'stop' | 'resume' | null
+  activeQuestId?: string | null
+  connectionState: 'connecting' | 'connected' | 'error'
+  isRunning?: boolean
+  questRoot?: string
+  modelLabel?: string
+  sessionId?: string
+  onChange: (next: string) => void
+  onSubmit: (override?: string) => void
+  onCancel: () => void
+}
+
+export const Composer: React.FC<ComposerProps> = ({
+  input,
+  statusLine,
+  suggestions = [],
+  placeholder = 'Type a message or /command',
+  mode,
+  configMode = null,
+  selectionMode = null,
+  activeQuestId,
+  connectionState,
+  isRunning = false,
+  questRoot,
+  modelLabel,
+  sessionId,
+  onChange,
+  onSubmit,
+  onCancel,
+}) => {
+  const { columns } = useTerminalSize()
+  const [suggestionIndex, setSuggestionIndex] = useState(0)
+  const statusLeft = [
+    connectionState,
+    mode === 'home' ? 'home' : activeQuestId ? `quest:${activeQuestId}` : 'quest',
+    modelLabel,
+  ]
+    .filter(Boolean)
+    .join(' | ')
+  const statusRight = statusLine
+
+  useEffect(() => {
+    setSuggestionIndex(0)
+  }, [input, suggestions.length])
+
+  const selectedSuggestion =
+    suggestions.length > 0
+      ? { command: suggestions[suggestionIndex]?.name || suggestions[0]?.name || '' }
+      : null
+
+  return (
+    <Box flexDirection="column" width={columns} flexShrink={0} flexGrow={0}>
+      <Box marginTop={1} justifyContent="space-between" width="100%">
+        <Box>
+          <Text color={theme.text.secondary}>{statusLeft || 'offline'}</Text>
+        </Box>
+        <Box>
+          <GradientStatusText text={statusRight} />
+        </Box>
+      </Box>
+
+      <LoadingIndicator
+        active={isRunning}
+        currentLoadingPhrase="DeepScientist is working"
+        rightContent={
+          <Text color={theme.text.secondary}>
+            {activeQuestId ? `quest:${activeQuestId}` : mode}
+          </Text>
+        }
+      />
+
+      <InputPrompt
+        value={input}
+        placeholder={placeholder}
+        glowActive={false}
+        onChange={onChange}
+        onSubmit={onSubmit}
+        onCancel={onCancel}
+        suggestionsVisible={suggestions.length > 0}
+        selectedSuggestion={selectedSuggestion}
+        onSuggestionNavigate={(direction) => {
+          if (suggestions.length === 0) return
+          setSuggestionIndex((prev) => (prev + direction + suggestions.length) % suggestions.length)
+        }}
+        historyItems={[]}
+      />
+
+      {suggestions.length > 0 ? (
+        <Box marginTop={1} flexDirection="column">
+          {suggestions.slice(0, 5).map((item, index) => {
+            const active = index === suggestionIndex
+            return (
+              <Box key={item.name} flexDirection="row">
+                <Text color={active ? theme.status.success : theme.text.secondary}>
+                  {active ? '> ' : '  '}
+                </Text>
+                <Text color={active ? theme.text.primary : theme.text.mention}>{item.name}</Text>
+                <Text color={theme.text.secondary}>{` - ${item.description}`}</Text>
+              </Box>
+            )
+          })}
+        </Box>
+      ) : (
+        <Text color={theme.text.secondary}>
+          {configMode === 'edit'
+            ? 'Config editor · Enter save · Ctrl+J newline · Esc cancel'
+            : configMode === 'browse'
+              ? 'Config browser · ↑/↓ select · Enter edit · Esc close'
+            : selectionMode
+            ? 'Quest browser · ↑/↓ select · Enter confirm · Esc cancel'
+            : mode === 'home'
+            ? 'Enter sends request · empty Enter binds selected quest · Ctrl+O web · Ctrl+B home'
+            : 'Enter sends message · Ctrl+R refresh · Ctrl+O web · Ctrl+G config'}
+        </Text>
+      )}
+
+      <Footer questRoot={questRoot} modelLabel={modelLabel} sessionId={sessionId} />
+    </Box>
+  )
+}

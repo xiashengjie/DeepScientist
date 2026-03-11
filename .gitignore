@@ -2,3 +2,10 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+/src/ui/node_modules/
+/src/ui/dist/
+/src/tui/node_modules/
+/src/tui/dist/
+/src/deepscientist.egg-info/
+/ui/
+/test-results/

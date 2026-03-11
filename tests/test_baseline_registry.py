@@ -33,6 +33,74 @@ def test_baseline_publish_and_attach(temp_home: Path) -> None:
     registry = BaselineRegistry(temp_home)
     entry = registry.get("baseline-demo")
     assert entry is not None
+    assert entry["metric_contract"]["primary_metric_id"] == "accuracy"
+    assert entry["metric_contract"]["metrics"][0]["metric_id"] == "accuracy"
     attachment = registry.attach(quest_root, "baseline-demo", "main")
     assert attachment["source_baseline_id"] == "baseline-demo"
     assert attachment["source_variant_id"] == "main"
+
+
+def test_baseline_registry_republish_keeps_single_canonical_entry(temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    registry = BaselineRegistry(temp_home)
+
+    first = registry.publish(
+        {
+            "baseline_id": "baseline-demo",
+            "name": "Demo baseline",
+            "metrics_summary": {"accuracy": 0.9},
+        }
+    )
+    second = registry.publish(
+        {
+            "baseline_id": "baseline-demo",
+            "name": "Demo baseline v2",
+            "metrics_summary": {"accuracy": 0.95},
+        }
+    )
+
+    entries = registry.list_entries()
+    assert len(entries) == 1
+    assert entries[0]["baseline_id"] == "baseline-demo"
+    assert entries[0]["metrics_summary"]["accuracy"] == 0.95
+    assert entries[0]["created_at"] == first["created_at"]
+    assert second["created_at"] == first["created_at"]
+
+
+def test_baseline_registry_rejects_unsafe_ids(temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    registry = BaselineRegistry(temp_home)
+
+    try:
+        registry.publish({"baseline_id": "../bad-baseline"})
+    except ValueError as exc:
+        assert "Baseline id" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected baseline id validation error")
+
+
+def test_baseline_registry_normalizes_explicit_metric_contract(temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    registry = BaselineRegistry(temp_home)
+
+    entry = registry.publish(
+        {
+            "baseline_id": "baseline-explicit",
+            "name": "Explicit contract baseline",
+            "metrics_summary": {"acc": 0.9, "loss": 0.12},
+            "metric_contract": {
+                "contract_id": "demo-contract",
+                "primary_metric_id": "acc",
+                "metrics": [
+                    {"metric_id": "acc", "label": "Accuracy", "direction": "maximize"},
+                    {"metric_id": "loss", "label": "Loss", "direction": "minimize"},
+                ],
+            },
+        }
+    )
+
+    assert entry["metric_contract"]["contract_id"] == "demo-contract"
+    assert entry["metric_contract"]["primary_metric_id"] == "acc"
+    metrics = {item["metric_id"]: item for item in entry["metric_contract"]["metrics"]}
+    assert metrics["acc"]["direction"] == "maximize"
+    assert metrics["loss"]["direction"] == "minimize"

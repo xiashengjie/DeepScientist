@@ -1,0 +1,168 @@
+import React, { useLayoutEffect, useRef, useState } from 'react'
+import { Box, measureElement, type DOMElement } from 'ink'
+import type { ConfigScreenItem } from '../components/ConfigScreen.js'
+import { MainContent } from '../components/MainContent.js'
+import { Composer } from '../components/Composer.js'
+import { useTerminalSize } from '../hooks/useTerminalSize.js'
+import type { ConnectorSnapshot, FeedItem, QuestSummary, SessionPayload } from '../types.js'
+import { isAlternateBufferEnabled } from '../utils/terminal.js'
+
+type DefaultAppLayoutProps = {
+  baseUrl: string
+  quests: QuestSummary[]
+  activeQuestId: string | null
+  browseQuestId: string | null
+  configMode: 'browse' | 'edit' | null
+  configItems: ConfigScreenItem[]
+  configIndex: number
+  configEditor?: {
+    item: ConfigScreenItem
+    content: string
+  } | null
+  questPanelMode: 'projects' | 'pause' | 'stop' | 'resume' | null
+  questPanelQuests: QuestSummary[]
+  questPanelIndex: number
+  snapshot: QuestSummary | null
+  session: SessionPayload | null
+  connectors: ConnectorSnapshot[]
+  history: FeedItem[]
+  pendingHistoryItems: FeedItem[]
+  input: string
+  connectionState: 'connecting' | 'connected' | 'error'
+  statusLine: string
+  suggestions?: Array<{ name: string; description: string }>
+  onChange: (next: string) => void
+  onSubmit: (override?: string) => void
+  onCancel: () => void
+}
+
+export const DefaultAppLayout: React.FC<DefaultAppLayoutProps> = ({
+  baseUrl,
+  quests,
+  activeQuestId,
+  browseQuestId,
+  configMode,
+  configItems,
+  configIndex,
+  configEditor,
+  questPanelMode,
+  questPanelQuests,
+  questPanelIndex,
+  snapshot,
+  session,
+  connectors,
+  history,
+  pendingHistoryItems,
+  input,
+  connectionState,
+  statusLine,
+  suggestions = [],
+  onChange,
+  onSubmit,
+  onCancel,
+}) => {
+  const { columns, rows } = useTerminalSize()
+  const composerRef = useRef<DOMElement>(null)
+  const [composerHeight, setComposerHeight] = useState(0)
+  const useAlternateBuffer = isAlternateBufferEnabled()
+
+  useLayoutEffect(() => {
+    if (composerRef.current) {
+      const height = Math.round(measureElement(composerRef.current).height)
+      if (Number.isFinite(height)) setComposerHeight((prev) => (prev !== height ? height : prev))
+    }
+  }, [
+    activeQuestId,
+    columns,
+    configMode,
+    connectionState,
+    input,
+    questPanelMode,
+    rows,
+    session?.acp_session?.session_id,
+    snapshot?.status,
+    statusLine,
+    suggestions.length,
+  ])
+
+  const safeRows = Math.max(1, rows)
+  const safeComposerHeight = Number.isFinite(composerHeight) ? composerHeight : 0
+  const requestedGap = 2
+  const gap = useAlternateBuffer
+    ? Math.max(0, Math.min(requestedGap, safeRows - safeComposerHeight - 1))
+    : requestedGap
+  const mainHeight = useAlternateBuffer
+    ? Math.max(1, safeRows - safeComposerHeight - gap)
+    : undefined
+
+  return (
+    <Box
+      flexDirection="column"
+      width={columns}
+      height={useAlternateBuffer ? safeRows : undefined}
+    >
+      <Box
+        flexGrow={useAlternateBuffer ? 1 : 0}
+        height={mainHeight}
+        overflow={useAlternateBuffer ? 'hidden' : undefined}
+      >
+        <MainContent
+          quests={quests}
+          browseQuestId={browseQuestId}
+          configMode={configMode}
+          configItems={configItems}
+          configIndex={configIndex}
+          configEditor={configEditor}
+          questPanelMode={questPanelMode}
+          questPanelQuests={questPanelQuests}
+          questPanelIndex={questPanelIndex}
+          snapshot={snapshot}
+          connectors={connectors}
+          session={session}
+          history={history}
+          pendingHistoryItems={pendingHistoryItems}
+          baseUrl={baseUrl}
+          connectionState={connectionState}
+          availableHeight={mainHeight}
+        />
+      </Box>
+      {gap > 0 ? <Box height={gap} flexShrink={0} /> : null}
+      <Box ref={composerRef} flexShrink={0}>
+        <Composer
+          input={input}
+          statusLine={statusLine}
+          suggestions={suggestions}
+          configMode={configMode}
+          selectionMode={questPanelMode}
+          mode={activeQuestId ? 'quest' : 'home'}
+          activeQuestId={activeQuestId}
+          connectionState={connectionState}
+          isRunning={String(snapshot?.status || '') === 'running'}
+          questRoot={
+            (session?.snapshot?.quest_root as string | undefined) || snapshot?.quest_root
+          }
+          modelLabel={
+            typeof session?.snapshot?.runner === 'string'
+              ? session.snapshot.runner
+              : undefined
+          }
+          sessionId={session?.acp_session?.session_id}
+          onChange={onChange}
+          onSubmit={onSubmit}
+          onCancel={onCancel}
+          placeholder={
+            configMode === 'edit'
+              ? 'Edit the config content, then press Enter to save'
+              : configMode === 'browse'
+                ? 'Use arrows to choose a config file, then press Enter'
+              : questPanelMode
+              ? 'Use arrows to choose a quest, then press Enter'
+              : activeQuestId
+              ? 'Send a message to the active quest or type /command'
+              : 'Type a request to create a quest, or /use <quest_id> to bind one'
+          }
+        />
+      </Box>
+    </Box>
+  )
+}

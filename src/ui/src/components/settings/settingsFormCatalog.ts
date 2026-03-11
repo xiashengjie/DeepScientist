@@ -1,0 +1,491 @@
+export type SettingsFieldKind = 'text' | 'password' | 'url' | 'boolean' | 'select' | 'list' | 'number'
+
+export type SettingsField = {
+  key: string
+  label: string
+  kind: SettingsFieldKind
+  placeholder?: string
+  description: string
+  whereToGet: string
+  options?: Array<{ label: string; value: string }>
+}
+
+export type SettingsSection = {
+  id: string
+  title: string
+  description: string
+  fields: SettingsField[]
+}
+
+export type RunnerCatalogEntry = {
+  name: string
+  label: string
+  description: string
+}
+
+export const configSections: SettingsSection[] = [
+  {
+    id: 'identity',
+    title: 'Core identity',
+    description: 'Global runtime identity and locale defaults.',
+    fields: [
+      {
+        key: 'home',
+        label: 'Home path',
+        kind: 'text',
+        placeholder: '/home/you/DeepScientist',
+        description: 'Root directory for config, quests, memory, logs, and caches.',
+        whereToGet: 'Use your installed DeepScientist home directory. Usually keep the generated path.',
+      },
+      {
+        key: 'default_runner',
+        label: 'Default runner',
+        kind: 'select',
+        description: 'Runner used by default when a quest does not override it.',
+        whereToGet: 'Choose the runner id that should execute quests most of the time.',
+        options: [
+          { label: 'Codex', value: 'codex' },
+          { label: 'Claude', value: 'claude' },
+        ],
+      },
+      {
+        key: 'default_locale',
+        label: 'Default locale',
+        kind: 'select',
+        description: 'Primary language used by system prompts and UI defaults.',
+        whereToGet: 'Choose the main language you want the runtime to speak by default.',
+        options: [
+          { label: '中文 (zh-CN)', value: 'zh-CN' },
+          { label: 'English (en-US)', value: 'en-US' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'daemon',
+    title: 'Daemon policy',
+    description: 'Lifecycle and concurrency behavior of the local daemon.',
+    fields: [
+      {
+        key: 'daemon.session_restore_on_start',
+        label: 'Restore sessions on start',
+        kind: 'boolean',
+        description: 'Reopen previous quest sessions when the daemon starts.',
+        whereToGet: 'Enable when you want the daemon to resume previous working state automatically.',
+      },
+      {
+        key: 'daemon.max_concurrent_quests',
+        label: 'Max concurrent quests',
+        kind: 'number',
+        placeholder: '1',
+        description: 'Upper bound on how many quests the daemon may run at the same time.',
+        whereToGet: 'Keep `1` unless you intentionally want parallel quest execution.',
+      },
+      {
+        key: 'daemon.ack_timeout_ms',
+        label: 'Ack timeout (ms)',
+        kind: 'number',
+        placeholder: '1000',
+        description: 'Timeout budget for short acknowledgment operations and connector feedback.',
+        whereToGet: 'Increase only if your deployment has consistently slower local I/O or bridges.',
+      },
+    ],
+  },
+  {
+    id: 'ui',
+    title: 'Web / TUI runtime',
+    description: 'How the local UI process binds and starts.',
+    fields: [
+      {
+        key: 'ui.host',
+        label: 'UI host',
+        kind: 'text',
+        placeholder: '0.0.0.0',
+        description: 'Network interface used by the local web UI server.',
+        whereToGet: 'Use `0.0.0.0` for LAN/container access or `127.0.0.1` for local-only use.',
+      },
+      {
+        key: 'ui.port',
+        label: 'UI port',
+        kind: 'number',
+        placeholder: '20999',
+        description: 'Port used by the local UI server.',
+        whereToGet: 'Choose a free local port; keep the default unless it conflicts with another service.',
+      },
+      {
+        key: 'ui.auto_open_browser',
+        label: 'Auto-open browser',
+        kind: 'boolean',
+        description: 'Open the browser automatically when the UI starts.',
+        whereToGet: 'Disable this on remote servers or headless environments.',
+      },
+      {
+        key: 'ui.default_mode',
+        label: 'Default start mode',
+        kind: 'select',
+        description: 'Preferred startup surface when launching DeepScientist.',
+        whereToGet: 'Choose `both` to keep current web + TUI behavior, or narrow it for a focused workflow.',
+        options: [
+          { label: 'Both', value: 'both' },
+          { label: 'Web', value: 'web' },
+          { label: 'TUI', value: 'tui' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'logging',
+    title: 'Logging',
+    description: 'Daemon log verbosity and retention.',
+    fields: [
+      {
+        key: 'logging.level',
+        label: 'Log level',
+        kind: 'select',
+        description: 'Controls how verbose daemon and runner logs should be.',
+        whereToGet: 'Use `info` normally; switch to `debug` only during troubleshooting.',
+        options: [
+          { label: 'Debug', value: 'debug' },
+          { label: 'Info', value: 'info' },
+          { label: 'Warning', value: 'warning' },
+          { label: 'Error', value: 'error' },
+        ],
+      },
+      {
+        key: 'logging.console',
+        label: 'Log to console',
+        kind: 'boolean',
+        description: 'Mirror runtime logs to the active terminal in addition to file logs.',
+        whereToGet: 'Keep enabled for local debugging; disable only if you want quieter terminals.',
+      },
+      {
+        key: 'logging.keep_days',
+        label: 'Retention days',
+        kind: 'number',
+        placeholder: '30',
+        description: 'How long local runtime logs should be kept before cleanup.',
+        whereToGet: 'Use a larger value if you keep long-running audits or reproducibility trails.',
+      },
+    ],
+  },
+  {
+    id: 'git',
+    title: 'Git behavior',
+    description: 'How DeepScientist checkpoints and exports quest state.',
+    fields: [
+      {
+        key: 'git.auto_checkpoint',
+        label: 'Auto-checkpoint',
+        kind: 'boolean',
+        description: 'Create Git checkpoints automatically during quest progress.',
+        whereToGet: 'Keep enabled unless you want to manage commits entirely by hand.',
+      },
+      {
+        key: 'git.auto_push',
+        label: 'Auto-push',
+        kind: 'boolean',
+        description: 'Push checkpoint commits to the default remote automatically.',
+        whereToGet: 'Enable only when the remote is trusted and quest repos are safe to push.',
+      },
+      {
+        key: 'git.default_remote',
+        label: 'Default remote',
+        kind: 'text',
+        placeholder: 'origin',
+        description: 'Remote name used when auto-push or export actions need a destination.',
+        whereToGet: 'Use the Git remote name configured in your quest repositories.',
+      },
+      {
+        key: 'git.graph_formats',
+        label: 'Graph export formats',
+        kind: 'list',
+        placeholder: 'svg, png, json',
+        description: 'Formats generated for Git / quest graph exports.',
+        whereToGet: 'Keep the default trio unless you intentionally want fewer export artifacts.',
+      },
+    ],
+  },
+  {
+    id: 'skills',
+    title: 'Skill synchronization',
+    description: 'How global and quest-local skills are mirrored into runner homes.',
+    fields: [
+      {
+        key: 'skills.sync_global_on_init',
+        label: 'Sync global skills on init',
+        kind: 'boolean',
+        description: 'Install project-provided skills into the global runner home during initialization.',
+        whereToGet: 'Enable when you want the machine-wide runner environment kept in sync automatically.',
+      },
+      {
+        key: 'skills.sync_quest_on_create',
+        label: 'Sync quest skills on create',
+        kind: 'boolean',
+        description: 'Mirror skills into a quest-local runner home when a new quest is created.',
+        whereToGet: 'Keep enabled so new quests start with the expected skills immediately available.',
+      },
+      {
+        key: 'skills.sync_quest_on_open',
+        label: 'Sync quest skills on open',
+        kind: 'boolean',
+        description: 'Refresh the quest-local skill mirror when an existing quest is opened.',
+        whereToGet: 'Enable if you update repo skills frequently and want open quests to pick them up.',
+      },
+    ],
+  },
+  {
+    id: 'connector-behavior',
+    title: 'Connector policy',
+    description: 'Global delivery behavior shared across connector integrations.',
+    fields: [
+      {
+        key: 'connectors.auto_ack',
+        label: 'Auto-ack incoming messages',
+        kind: 'boolean',
+        description: 'Send immediate short acknowledgments before the full quest work completes.',
+        whereToGet: 'Enable for chat-first operators who expect a quick “received” response.',
+      },
+      {
+        key: 'connectors.milestone_push',
+        label: 'Push milestones',
+        kind: 'boolean',
+        description: 'Allow milestone and decision updates to fan out through enabled connectors.',
+        whereToGet: 'Disable only when you want connectors to stay passive and poll-based.',
+      },
+      {
+        key: 'connectors.direct_chat_enabled',
+        label: 'Enable direct chat',
+        kind: 'boolean',
+        description: 'Allow connectors to start or continue quests from direct messages.',
+        whereToGet: 'Disable if all connector traffic should be funneled through approved group chats only.',
+      },
+    ],
+  },
+  {
+    id: 'cloud',
+    title: 'Cloud link',
+    description: 'Optional remote coordination or account binding.',
+    fields: [
+      {
+        key: 'cloud.enabled',
+        label: 'Enable cloud link',
+        kind: 'boolean',
+        description: 'Turn on the optional DeepScientist cloud link path.',
+        whereToGet: 'Leave disabled for fully local-first deployments.',
+      },
+      {
+        key: 'cloud.base_url',
+        label: 'Cloud base URL',
+        kind: 'url',
+        placeholder: 'https://deepscientist.cc',
+        description: 'Base URL of the cloud service used for optional sync or token verification.',
+        whereToGet: 'Set this only if you operate against a custom or self-hosted cloud endpoint.',
+      },
+      {
+        key: 'cloud.token',
+        label: 'Cloud token',
+        kind: 'password',
+        placeholder: 'token',
+        description: 'Direct token used for cloud authentication when not sourced from an environment variable.',
+        whereToGet: 'Prefer `token_env` in shared or production environments.',
+      },
+      {
+        key: 'cloud.token_env',
+        label: 'Cloud token env var',
+        kind: 'text',
+        placeholder: 'DEEPSCIENTIST_TOKEN',
+        description: 'Environment variable name that holds the cloud token.',
+        whereToGet: 'Use the env var name you export in your shell, service unit, or container.',
+      },
+      {
+        key: 'cloud.verify_token_on_start',
+        label: 'Verify token on start',
+        kind: 'boolean',
+        description: 'Validate the configured cloud token when the daemon starts.',
+        whereToGet: 'Enable only if you want startup to fail fast on invalid cloud credentials.',
+      },
+      {
+        key: 'cloud.sync_mode',
+        label: 'Cloud sync mode',
+        kind: 'select',
+        description: 'Overall cloud synchronization mode.',
+        whereToGet: 'Keep `disabled` unless you have a specific cloud sync workflow.',
+        options: [
+          { label: 'Disabled', value: 'disabled' },
+          { label: 'Pull', value: 'pull' },
+          { label: 'Push', value: 'push' },
+          { label: 'Bidirectional', value: 'bidirectional' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'acp',
+    title: 'ACP bridge',
+    description: 'Compatibility knobs for ACP-style session envelopes.',
+    fields: [
+      {
+        key: 'acp.compatibility_profile',
+        label: 'Compatibility profile',
+        kind: 'text',
+        placeholder: 'deepscientist-acp-compat/v1',
+        description: 'Named ACP compatibility profile used when exposing quest sessions to external consumers.',
+        whereToGet: 'Keep the built-in profile unless you are intentionally matching another ACP consumer.',
+      },
+      {
+        key: 'acp.events_transport',
+        label: 'Events transport',
+        kind: 'select',
+        description: 'Transport used for ACP-style event delivery.',
+        whereToGet: 'Use `rest-poll` unless you have implemented another ACP bridge transport.',
+        options: [
+          { label: 'REST poll', value: 'rest-poll' },
+          { label: 'SSE', value: 'sse' },
+        ],
+      },
+      {
+        key: 'acp.sdk_bridge_enabled',
+        label: 'Enable SDK bridge',
+        kind: 'boolean',
+        description: 'Allow the runtime to bridge through an ACP SDK module.',
+        whereToGet: 'Enable only when you have an ACP SDK integration in your environment.',
+      },
+      {
+        key: 'acp.sdk_module',
+        label: 'SDK module',
+        kind: 'text',
+        placeholder: 'acp',
+        description: 'Python module name used when ACP SDK bridging is enabled.',
+        whereToGet: 'Set this to the importable module that exposes your ACP bridge implementation.',
+      },
+    ],
+  },
+]
+
+export const pluginSections: SettingsSection[] = [
+  {
+    id: 'plugins',
+    title: 'Plugin discovery',
+    description: 'External plugin loading and trust policy.',
+    fields: [
+      {
+        key: 'load_paths',
+        label: 'Load paths',
+        kind: 'list',
+        placeholder: '/home/you/DeepScientist/plugins',
+        description: 'Directories scanned for installable or locally linked plugin bundles.',
+        whereToGet: 'List one directory per line or comma-separated. Keep the default plugin directory in the list.',
+      },
+      {
+        key: 'enabled',
+        label: 'Force-enable plugin ids',
+        kind: 'list',
+        placeholder: 'plugin-a, plugin-b',
+        description: 'Optional plugin ids that should be enabled explicitly.',
+        whereToGet: 'Fill only when you want to override normal auto-discovery behavior.',
+      },
+      {
+        key: 'disabled',
+        label: 'Force-disable plugin ids',
+        kind: 'list',
+        placeholder: 'plugin-x, plugin-y',
+        description: 'Optional plugin ids that should stay disabled even if discovered.',
+        whereToGet: 'Use for temporary rollbacks or local blocklists.',
+      },
+      {
+        key: 'allow_unsigned',
+        label: 'Allow unsigned plugins',
+        kind: 'boolean',
+        description: 'Permit loading plugins that do not pass signature / trust checks.',
+        whereToGet: 'Only enable if you fully trust the plugin source and local machine.',
+      },
+    ],
+  },
+]
+
+export const runnerCatalog: RunnerCatalogEntry[] = [
+  {
+    name: 'codex',
+    label: 'Codex',
+    description: 'Primary DeepScientist runner. Controls the CLI binary, model defaults, and sandbox policy.',
+  },
+  {
+    name: 'claude',
+    label: 'Claude',
+    description: 'Reserved secondary runner slot. Keep disabled unless you intentionally wire this path.',
+  },
+]
+
+export const runnerFields: SettingsField[] = [
+  {
+    key: 'enabled',
+    label: 'Enabled',
+    kind: 'boolean',
+    description: 'Whether this runner is available for selection and execution.',
+    whereToGet: 'Disable a runner if the binary or environment is not installed on this machine.',
+  },
+  {
+    key: 'binary',
+    label: 'Binary',
+    kind: 'text',
+    placeholder: 'codex',
+    description: 'Command name or absolute path used to launch the runner.',
+    whereToGet: 'Use the executable name on PATH or an absolute binary path for custom installs.',
+  },
+  {
+    key: 'config_dir',
+    label: 'Config directory',
+    kind: 'text',
+    placeholder: '~/.codex',
+    description: 'Global runner home used for auth and global configuration.',
+    whereToGet: 'Point this to the runner home directory that stores auth and global config files.',
+  },
+  {
+    key: 'model',
+    label: 'Default model',
+    kind: 'text',
+    placeholder: 'gpt-5.4',
+    description: 'Default model used when the quest or request does not override it.',
+    whereToGet: 'Use the model id accepted by the selected runner.',
+  },
+  {
+    key: 'approval_policy',
+    label: 'Approval policy',
+    kind: 'select',
+    description: 'How the runner should request permission for privileged actions.',
+    whereToGet: 'Pick the policy that matches your local trust and automation level.',
+    options: [
+      { label: 'Never', value: 'never' },
+      { label: 'On failure', value: 'on-failure' },
+      { label: 'On request', value: 'on-request' },
+      { label: 'Untrusted', value: 'untrusted' },
+    ],
+  },
+  {
+    key: 'sandbox_mode',
+    label: 'Sandbox mode',
+    kind: 'select',
+    description: 'Filesystem / process sandbox applied to runner actions.',
+    whereToGet: 'Use the most restrictive mode that still allows your expected workflow.',
+    options: [
+      { label: 'Read only', value: 'read-only' },
+      { label: 'Workspace write', value: 'workspace-write' },
+      { label: 'Danger full access', value: 'danger-full-access' },
+    ],
+  },
+  {
+    key: 'status',
+    label: 'Status note',
+    kind: 'text',
+    placeholder: 'reserved_todo',
+    description: 'Optional operator note about the state of this runner integration.',
+    whereToGet: 'Use this for reminders like reserved, experimental, or pending setup.',
+  },
+]
+
+export const mcpTransportOptions = [
+  { label: 'Stdio', value: 'stdio' },
+  { label: 'Streamable HTTP', value: 'streamable_http' },
+  { label: 'HTTP', value: 'http' },
+  { label: 'SSE', value: 'sse' },
+]

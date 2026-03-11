@@ -36,7 +36,7 @@ class MemoryService:
                 return candidate
         root = self._root_for(scope, quest_root)
         if card_id:
-            for candidate in root.glob("*/*.md"):
+            for candidate in root.glob("**/*.md"):
                 metadata, _body = load_markdown_document(candidate)
                 if metadata.get("id") == card_id:
                     return candidate

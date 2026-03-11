@@ -1,5 +1,7 @@
 {
   "items": [
+    {"title": "Core Agent", "path": "/assets/text/agents/core-agent.md"},
+    {"title": "Worker Base", "path": "/assets/text/agents/worker-base.md"},
     {"title": "PI Agent", "path": "/assets/text/agents/pi.md"},
     {"title": "Reproducer Agent", "path": "/assets/text/agents/reproducer.md"},
     {"title": "Analysis Agent", "path": "/assets/text/agents/analysis-experimenter.md"},

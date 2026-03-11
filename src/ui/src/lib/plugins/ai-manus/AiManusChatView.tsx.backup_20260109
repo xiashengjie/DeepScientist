@@ -1,0 +1,3639 @@
+'use client'
+
+import {
+  type HTMLAttributes,
+  type ReactNode,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { createPortal } from 'react-dom'
+import dynamic from 'next/dynamic'
+import type { PanelImperativeHandle, PanelSize } from 'react-resizable-panels'
+import { LayoutGroup, motion, useReducedMotion } from 'framer-motion'
+import {
+  ArrowDown,
+  FileSearch,
+  PanelLeft,
+  Sparkles,
+  Terminal,
+  Server,
+} from 'lucide-react'
+import { VariableSizeList, type ListChildComponentProps } from 'react-window'
+import { cn } from '@/lib/utils'
+import { useChatSessionStore } from '@/lib/stores/session'
+import { useSSESession } from '@/lib/hooks/useSSESession'
+import {
+  createSession,
+  deleteSession,
+  getLatestSession,
+  getSessionFiles,
+  stopSession,
+  submitToolOutput,
+  type SessionListItem,
+  type SessionFileResponse,
+} from '@/lib/api/sessions'
+import { useTabsStore } from '@/lib/stores/tabs'
+import { useFileTreeStore } from '@/lib/stores/file-tree'
+import { useOpenFile } from '@/hooks/useOpenFile'
+import { useCliStore } from '@/lib/plugins/cli/stores/cli-store'
+import { parseCliFileId } from '@/lib/api/cli-file-id'
+import { toCliResourcePath, toFilesResourcePath } from '@/lib/utils/resource-paths'
+import { useAuthStore } from '@/lib/stores/auth'
+import { useToast } from '@/components/ui/toast'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { ProjectShareDialog } from '@/components/features/Share/ProjectShareDialog'
+import { SpotlightCard } from '@/components/react-bits'
+import { isShareViewForProject } from '@/lib/share-session'
+import { useSessionList } from '@/lib/hooks/useSessionList'
+import { handleUIEffect, previewPdfToolEffect } from '@/lib/ai/effect-dispatcher'
+import { getBuiltinPluginManifest } from '@/lib/plugins'
+import type {
+  AgentSSEEvent,
+  AttachmentInfo,
+  AttachmentsEventData,
+  ChatSurface,
+  ErrorEventData,
+  MessageEventData,
+  PlanEventData,
+  ReasoningEventData,
+  StepEventData,
+  TitleEventData,
+  ToolEventData,
+} from '@/lib/types/chat-events'
+import { buildCopilotFilePath } from './lib/file-operations'
+import { resolveToolCategory } from './lib/tool-map'
+import type {
+  AttachmentsContent,
+  ChatMessageItem,
+  MessageContent,
+  ReasoningContent,
+  StepContent,
+  ToolContent,
+} from './types'
+import { ChatBox } from './components/ChatBox'
+import { ChatMessage } from './components/ChatMessage'
+import { LoadingIndicator } from './components/LoadingIndicator'
+import OrbitLogoStatus from './components/OrbitLogoStatus'
+import { PlanPanel } from './components/PlanPanel'
+import { QuestionPrompt } from './components/QuestionPrompt'
+import { SessionFilesDialog } from './components/SessionFilesDialog'
+import { SessionListPanel } from './components/SessionListPanel'
+import { ToolPanel } from './components/ToolPanel'
+import type { AiManusChatActions, AiManusChatMeta, CopilotPrefill, CopilotSuggestionItem, CopilotSuggestionPayload } from './view-types'
+
+const MAX_RENDERED_MESSAGES = 120
+const VIRTUALIZE_THRESHOLD = 100
+const DEFAULT_MESSAGE_HEIGHT = 120
+const TOOL_PANEL_BREAKPOINT = 1024
+const TOOL_PANEL_DEFAULT_SIZE = 40
+const TOOL_PANEL_MIN_SIZE = 26
+const TOOL_PANEL_MAX_SIZE = 62
+const DISPLAY_LOCK_TIMEOUT_MS = 8000
+const FOLLOW_THRESHOLD_PX = 12
+const PROGRAMMATIC_SCROLL_RESET_MS = 160
+const BUFFER_PASSTHROUGH_EVENTS = new Set([
+  'tool',
+  'step',
+  'plan',
+  'wait',
+  'attachments',
+  'title',
+])
+
+type DisplayLockKind = 'assistant' | 'reasoning' | 'tool'
+
+const WELCOME_INTRO_CARDS = [
+  { title: 'Plan', icon: Sparkles },
+  { title: 'Terminal', icon: Terminal },
+  { title: 'Sessions', icon: PanelLeft },
+] as const
+
+const VNCViewer = dynamic(
+  () => import('@/components/chat/toolViews/VNCViewer').then((mod) => mod.VNCViewer),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full w-full items-center justify-center text-sm text-[var(--text-tertiary)]">
+        Loading sandbox view...
+      </div>
+    ),
+  }
+)
+
+function createMessageId(prefix: string) {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return `${prefix}-${crypto.randomUUID()}`
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function normalizeTimestampMs(timestamp?: number) {
+  if (!timestamp) return 0
+  return timestamp < 1e12 ? timestamp * 1000 : timestamp
+}
+
+function normalizeSessionStatus(status?: string | null) {
+  if (!status) return null
+  if (
+    status === 'pending' ||
+    status === 'running' ||
+    status === 'waiting' ||
+    status === 'completed' ||
+    status === 'failed'
+  ) {
+    return status
+  }
+  return null
+}
+
+function normalizeAttachments(
+  attachments: AttachmentInfo[] | undefined,
+  sessionId?: string | null
+): AttachmentInfo[] {
+  if (!Array.isArray(attachments) || attachments.length === 0) return []
+  return attachments.map((file) => ({
+    ...file,
+    status: file.status ?? 'success',
+    file_path: file.file_path || (sessionId ? buildCopilotFilePath(sessionId, file.filename) : file.file_path),
+  }))
+}
+
+function coerceTimestamp(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric)) return numeric
+    const parsed = Date.parse(value)
+    if (!Number.isNaN(parsed)) return Math.floor(parsed / 1000)
+  }
+  return Math.floor(Date.now() / 1000)
+}
+
+function coerceRole(value: unknown): 'user' | 'assistant' {
+  return value === 'user' || value === 'assistant' ? value : 'assistant'
+}
+
+function coerceReasoningKind(value: unknown): 'summary' | 'full' {
+  return value === 'summary' ? 'summary' : 'full'
+}
+
+function buildReasoningKey(reasoningId: string, kind: 'summary' | 'full') {
+  return `${reasoningId}:${kind}`
+}
+
+function extractFileEffectData(toolData: Partial<ToolEventData>) {
+  const args =
+    toolData.args && typeof toolData.args === 'object' && !Array.isArray(toolData.args)
+      ? (toolData.args as Record<string, unknown>)
+      : {}
+  const content =
+    toolData.content && typeof toolData.content === 'object' && !Array.isArray(toolData.content)
+      ? (toolData.content as Record<string, unknown>)
+      : {}
+
+  const fileId =
+    (typeof args.file_id === 'string' && args.file_id) ||
+    (typeof args.fileId === 'string' && args.fileId) ||
+    (typeof content.file_id === 'string' && content.file_id) ||
+    (typeof content.fileId === 'string' && content.fileId) ||
+    undefined
+  const filePath =
+    (typeof args.file === 'string' && args.file) ||
+    (typeof args.file_path === 'string' && args.file_path) ||
+    (typeof args.path === 'string' && args.path) ||
+    (typeof args.filePath === 'string' && args.filePath) ||
+    (typeof content.file === 'string' && content.file) ||
+    (typeof content.file_path === 'string' && content.file_path) ||
+    (typeof content.filePath === 'string' && content.filePath) ||
+    undefined
+  const fileName =
+    (typeof args.file_name === 'string' && args.file_name) ||
+    (typeof args.fileName === 'string' && args.fileName) ||
+    (typeof content.file_name === 'string' && content.file_name) ||
+    (typeof content.fileName === 'string' && content.fileName) ||
+    undefined
+
+  const diff =
+    typeof content.diff === 'object' && content.diff ? (content.diff as Record<string, unknown>) : undefined
+  const changeType =
+    typeof content.changeType === 'string' ? (content.changeType as 'create' | 'update' | 'delete') : undefined
+
+  return { fileId, filePath, fileName, content, diff, changeType }
+}
+
+function coerceOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+function buildPdfToolPreview(toolData: Partial<ToolEventData>) {
+  const functionName = typeof toolData.function === 'string' ? toolData.function : ''
+  if (!functionName.startsWith('pdf_')) return null
+  const args =
+    toolData.args && typeof toolData.args === 'object' && !Array.isArray(toolData.args)
+      ? (toolData.args as Record<string, unknown>)
+      : {}
+  const { fileId, filePath, fileName } = extractFileEffectData(toolData)
+  if (!fileId && !filePath && !fileName) return null
+
+  const rawPage =
+    coerceOptionalNumber(args.page) ??
+    coerceOptionalNumber(args.page_number) ??
+    coerceOptionalNumber(args.pageNumber)
+  const page = rawPage && rawPage > 0 ? Math.floor(rawPage) : undefined
+  const annotationId =
+    typeof args.annotation_id === 'string'
+      ? args.annotation_id
+      : typeof args.annotationId === 'string'
+        ? args.annotationId
+        : undefined
+  const mode =
+    functionName === 'pdf_guide' ? 'guide' : functionName === 'pdf_annotate' ? 'annotate' : undefined
+
+  return {
+    fileId,
+    filePath,
+    fileName,
+    page,
+    annotationId,
+    mode,
+  }
+}
+
+function buildFallbackEffects(toolData: Partial<ToolEventData>, status: string) {
+  if (status !== 'called') return []
+  const functionName = typeof toolData.function === 'string' ? toolData.function : ''
+  const { fileId, filePath, fileName, content, diff, changeType } = extractFileEffectData(toolData)
+  if (!fileId && !filePath) return []
+
+  if (functionName === 'file_read' || functionName === 'file_info') {
+    return [
+      {
+        name: 'file:read',
+        data: {
+          fileId,
+          filePath,
+          fileName,
+        },
+      },
+    ]
+  }
+
+  if (functionName === 'file_write' || functionName === 'file_patch') {
+    const created = typeof content?.created === 'boolean' ? content.created : undefined
+    const derivedChangeType = changeType ?? (created ? 'create' : 'update')
+    return [
+      {
+        name: 'file:write',
+        data: {
+          fileId,
+          filePath,
+          fileName,
+          ...(created !== undefined ? { created } : {}),
+          ...(derivedChangeType ? { changeType: derivedChangeType } : {}),
+          ...(diff ? { diff } : {}),
+        },
+      },
+    ]
+  }
+
+  if (functionName === 'file_delete') {
+    return [
+      {
+        name: 'file:delete',
+        data: {
+          fileId,
+          filePath,
+          fileName,
+          changeType: changeType ?? 'delete',
+          ...(diff ? { diff } : {}),
+        },
+      },
+    ]
+  }
+
+  return []
+}
+
+const RESTORE_EVENT_TYPES = new Set([
+  'message',
+  'tool',
+  'step',
+  'reasoning',
+  'plan',
+  'error',
+  'done',
+  'title',
+  'wait',
+  'attachments',
+])
+
+function normalizeRestoredEvent(raw: unknown): AgentSSEEvent | null {
+  if (!raw || typeof raw !== 'object') return null
+  const record = raw as {
+    event?: unknown
+    event_type?: unknown
+    type?: unknown
+    data?: unknown
+    event_json?: unknown
+    payload?: unknown
+    event_id?: unknown
+    timestamp?: unknown
+  }
+
+  const eventType =
+    typeof record.event === 'string'
+      ? record.event
+      : typeof record.event_type === 'string'
+        ? record.event_type
+        : typeof record.type === 'string'
+          ? record.type
+          : null
+
+  if (!eventType || !RESTORE_EVENT_TYPES.has(eventType)) return null
+
+  let data = record.data ?? record.event_json ?? record.payload ?? {}
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data)
+    } catch {
+      data = {}
+    }
+  }
+
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    data = {}
+  }
+
+  const normalized = { ...(data as Record<string, unknown>) }
+  if (!('event_id' in normalized) && typeof record.event_id === 'string') {
+    normalized.event_id = record.event_id
+  }
+  if (!('timestamp' in normalized) && record.timestamp != null) {
+    normalized.timestamp = record.timestamp
+  }
+
+  return {
+    event: eventType as AgentSSEEvent['event'],
+    data: normalized as AgentSSEEvent['data'],
+  }
+}
+
+function buildAttachmentKey(
+  role: 'user' | 'assistant',
+  timestamp: number,
+  attachments: AttachmentInfo[]
+) {
+  const ids = attachments
+    .map((file) => file.file_id || file.filename)
+    .filter(Boolean)
+    .sort()
+    .join('|')
+  return `${role}:${timestamp}:${ids}`
+}
+
+export function AiManusChatView({
+  mode,
+  projectId,
+  readOnly,
+  visible,
+  prefill,
+  suggestions,
+  suggestionsDisabled,
+  onSuggestionSelect,
+  onActionsChange,
+  onMetaChange,
+  openToolPanel,
+  hideCopilotGreeting,
+  embedded,
+  toolPanelMountId,
+  sessionListMountId,
+  uiMode,
+}: {
+  mode: ChatSurface
+  projectId?: string | null
+  readOnly?: boolean
+  visible?: boolean
+  prefill?: CopilotPrefill | null
+  suggestions?: CopilotSuggestionPayload | null
+  suggestionsDisabled?: boolean
+  onSuggestionSelect?: (item: CopilotSuggestionItem) => void
+  onActionsChange?: (actions: AiManusChatActions | null) => void
+  onMetaChange?: (meta: AiManusChatMeta) => void
+  openToolPanel?: boolean
+  hideCopilotGreeting?: boolean
+  embedded?: boolean
+  toolPanelMountId?: string
+  sessionListMountId?: string
+  uiMode?: ChatSurface
+}) {
+  const { addToast } = useToast()
+  const { openFileInTab } = useOpenFile()
+  const findNode = useFileTreeStore((state) => state.findNode)
+  const tabs = useTabsStore((state) => state.tabs)
+  const activeTab = useTabsStore((state) => state.tabs.find((tab) => tab.id === state.activeTabId))
+  const cliServers = useCliStore((state) => state.servers)
+  const loadCliServers = useCliStore((state) => state.loadServers)
+  const user = useAuthStore((state) => state.user)
+
+  const sessionId = useChatSessionStore((state) =>
+    projectId ? state.sessionIdsByProject[projectId] ?? null : null
+  )
+  const setSessionId = useChatSessionStore((state) => state.setSessionId)
+  const clearSessionId = useChatSessionStore((state) => state.clearSessionId)
+  const setLastEventId = useChatSessionStore((state) => state.setLastEventId)
+  const executionTarget = useChatSessionStore((state) =>
+    projectId ? state.executionTargetsByProject[projectId] ?? 'sandbox' : 'sandbox'
+  )
+  const cliServerId = useChatSessionStore((state) =>
+    projectId ? state.cliServerIdsByProject[projectId] ?? null : null
+  )
+  const setExecutionTarget = useChatSessionStore((state) => state.setExecutionTarget)
+  const setCliServerId = useChatSessionStore((state) => state.setCliServerId)
+
+  const isShareView = Boolean(projectId && isShareViewForProject(projectId))
+  const readOnlyMode = Boolean(readOnly || isShareView)
+  const showHistoryPanel = mode === 'welcome' && !isShareView
+  const sessionListReadOnly = readOnlyMode || !projectId
+  const toolPanelSizeKey = projectId
+    ? `ds:ai-manus:tool-panel-size:${projectId}`
+    : 'ds:ai-manus:tool-panel-size'
+  const runtimeLabel = useMemo(() => {
+    if (executionTarget === 'cli' && cliServerId) {
+      const server = cliServers.find((item) => item.id === cliServerId)
+      return `CLI: ${server?.name || server?.hostname || cliServerId.slice(0, 6)}`
+    }
+    return 'Backend Sandbox'
+  }, [cliServerId, cliServers, executionTarget])
+
+  const { sessions, setSessions, reload: reloadSessionSummaries } = useSessionList({
+    projectId,
+    enabled: showHistoryPanel,
+    stream: false,
+  })
+  const sessionsRef = useRef<SessionListItem[]>([])
+
+  const [messages, setMessages] = useState<ChatMessageItem[]>([])
+  const messagesRef = useRef<ChatMessageItem[]>([])
+  const [plan, setPlan] = useState<PlanEventData | null>(null)
+  const [title, setTitle] = useState('New Chat')
+  const [inputMessage, setInputMessage] = useState('')
+  const [attachments, setAttachments] = useState<AttachmentInfo[]>([])
+  const [recentFilesEnabled, setRecentFilesEnabled] = useState(false)
+  const [follow, setFollow] = useState(true)
+  const followRef = useRef(true)
+  const userScrollRef = useRef(false)
+  const programmaticScrollRef = useRef(false)
+  const [restoreToken, setRestoreToken] = useState(0)
+  const forceRestoreRef = useRef(false)
+  const lastVisibleRef = useRef(false)
+  const lastModeRef = useRef<ChatSurface | null>(null)
+  const [realTime, setRealTime] = useState(true)
+  const realTimeRef = useRef(true)
+  const [toolPanelOpen, setToolPanelOpen] = useState(true)
+  const [toolPanelLive, setToolPanelLive] = useState(false)
+  const [toolPanelView, setToolPanelView] = useState<'tool' | 'terminal'>(() =>
+    mode === 'welcome' ? 'terminal' : 'tool'
+  )
+  const [activeTool, setActiveTool] = useState<ToolContent | null>(null)
+  const [toolPanelSize, setToolPanelSize] = useState(TOOL_PANEL_DEFAULT_SIZE)
+  const [toolCallCount, setToolCallCount] = useState(0)
+  const [copilotStatus, setCopilotStatus] = useState<string | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(() => mode === 'welcome')
+  const [fileListOpen, setFileListOpen] = useState(false)
+  const [sessionFiles, setSessionFiles] = useState<SessionFileResponse[]>([])
+  const [sessionFilesLoading, setSessionFilesLoading] = useState(false)
+  const [isCompactView, setIsCompactView] = useState(false)
+  const [highlightSessionId, setHighlightSessionId] = useState<string | null>(null)
+  const [isRestoring, setIsRestoring] = useState(false)
+  const [draftSessionId, setDraftSessionId] = useState<string | null>(null)
+  const draftSessionIdRef = useRef<string | null>(draftSessionId)
+  const [questionPrompt, setQuestionPrompt] = useState<{
+    toolCallId: string
+    args: Record<string, unknown>
+  } | null>(null)
+  const autoScrollRef = useRef(false)
+  const [takeoverActive, setTakeoverActive] = useState(false)
+  const [takeoverSessionId, setTakeoverSessionId] = useState('')
+  const skipRestoreRef = useRef(false)
+  const previousSessionRef = useRef<string | null>(null)
+  const sessionIdRef = useRef<string | null>(sessionId)
+  const ensureSessionPromiseRef = useRef<{
+    projectId: string | null
+    promise: Promise<string | null>
+  } | null>(null)
+  const autoEnsureKeyRef = useRef<string | null>(null)
+  const historyOpenPreferenceRef = useRef(true)
+
+  const lastToolRef = useRef<ToolContent | null>(null)
+  const lastNoMessageToolRef = useRef<ToolContent | null>(null)
+  const lastStepRef = useRef<StepContent | null>(null)
+  const lastReasoningRef = useRef<ReasoningContent | null>(null)
+  const reasoningByIdRef = useRef<Map<string, ChatMessageItem>>(new Map())
+  const reasoningLocksRef = useRef<Set<string>>(new Set())
+  const displayLockRef = useRef<{ id: string; kind: DisplayLockKind } | null>(null)
+  const displayLockTimerRef = useRef<number | null>(null)
+  const [displayLockState, setDisplayLockState] = useState<{ id: string; kind: DisplayLockKind } | null>(null)
+  const bufferedEventsRef = useRef<AgentSSEEvent[]>([])
+  const toolPanelAutoOpenRef = useRef(false)
+  const toolCallSeenRef = useRef<Set<string>>(new Set())
+  const statusToolSeenRef = useRef<Set<string>>(new Set())
+  const pendingUserRef = useRef<{ content: string; attachments: AttachmentInfo[] } | null>(null)
+  const attachmentsSeenRef = useRef<Set<string>>(new Set())
+  const restoringRef = useRef(false)
+  const restoringSessionIdRef = useRef<string | null>(null)
+  const restoredSessionRef = useRef<string | null>(null)
+  const latestSessionLoadedRef = useRef<string | null>(null)
+  const restoreRetryRef = useRef<string | null>(null)
+  const restoredStatusRef = useRef<'pending' | 'running' | 'waiting' | 'completed' | 'failed' | null>(null)
+  const sessionEventCacheRef = useRef<Map<string, AgentSSEEvent[]>>(new Map())
+  const cacheReplayRef = useRef(false)
+  const highlightTimerRef = useRef<number | null>(null)
+  const introTimerRef = useRef<number | null>(null)
+  const [welcomeIntroState, setWelcomeIntroState] = useState<'center' | 'dropping' | 'done'>('center')
+
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const listWrapperRef = useRef<HTMLDivElement | null>(null)
+  const listOuterRef = useRef<HTMLDivElement | null>(null)
+  const listRef = useRef<VariableSizeList | null>(null)
+  const sizeMapRef = useRef<Map<number, number>>(new Map())
+  const [listHeight, setListHeight] = useState(0)
+  const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const toolPanelRef = useRef<PanelImperativeHandle | null>(null)
+  const [toolPanelMount, setToolPanelMount] = useState<HTMLElement | null>(null)
+  const [sessionListMount, setSessionListMount] = useState<HTMLElement | null>(null)
+
+  const uiSurface = uiMode ?? mode
+  const toolPanelMountActive = mode === 'welcome' && Boolean(toolPanelMountId)
+  const sessionListMountActive = mode === 'welcome' && Boolean(sessionListMountId)
+  const toolPanelEnabled = mode === 'welcome' && (toolPanelMountActive || !isCompactView)
+  const toolPanelOpenValue = toolPanelMountActive ? true : toolPanelOpen
+  const shellToolContent = useMemo<ToolContent | null>(() => {
+    if (!activeTool) return null
+    return resolveToolCategory(activeTool) === 'shell' ? activeTool : null
+  }, [activeTool])
+  const terminalShellSessionId = sessionId ? `terminal-${sessionId}` : ''
+  const terminalToolContent = useMemo<ToolContent | null>(() => {
+    if (executionTarget === 'cli' && cliServerId && sessionId) {
+      const terminalEventId = terminalShellSessionId || 'terminal-new'
+      return {
+        event_id: terminalEventId,
+        timestamp: Math.floor(Date.now() / 1000),
+        tool_call_id: terminalEventId,
+        name: 'shell',
+        status: 'called',
+        function: 'shell_view',
+        args: terminalShellSessionId ? { id: terminalShellSessionId } : {},
+        content: {
+          session_id: terminalShellSessionId || undefined,
+          runtime: executionTarget,
+          execution_target: executionTarget,
+          cli_server_id: cliServerId ?? undefined,
+        },
+      }
+    }
+    return shellToolContent
+  }, [cliServerId, executionTarget, sessionId, shellToolContent, terminalShellSessionId])
+  const canOpenTerminal = useMemo(() => {
+    if (executionTarget === 'cli') {
+      return Boolean(cliServerId)
+    }
+    return Boolean(shellToolContent)
+  }, [cliServerId, executionTarget, shellToolContent])
+  const panelToolContent = toolPanelView === 'terminal' ? terminalToolContent : activeTool
+  const showToolPanelInline =
+    toolPanelEnabled && !toolPanelMountActive && toolPanelOpenValue && Boolean(panelToolContent)
+  const toolPanelVisible = toolPanelEnabled && toolPanelOpenValue && Boolean(panelToolContent)
+  const messageMaxWidthClass = showToolPanelInline
+    ? 'max-w-[680px] xl:max-w-[720px]'
+    : 'max-w-[768px]'
+  const isCopilotSurface = uiSurface === 'copilot'
+  const isVisible = visible ?? true
+  const hideCompactMeta = isCopilotSurface || isCompactView
+  const prefersReducedMotion = useReducedMotion()
+  const composerLayoutId = useId()
+  const composerLayoutGroupId = `ai-manus-layout-${composerLayoutId}`
+  const composerLayoutKey = `ai-manus-composer-${composerLayoutId}`
+  const isEmptyState = messages.length === 0 && !isRestoring
+  const introEnabled = uiSurface === 'welcome' || (uiSurface === 'copilot' && !hideCopilotGreeting)
+  const showIntro = introEnabled && welcomeIntroState !== 'done'
+  const showIntroCenter = introEnabled && welcomeIntroState === 'center'
+  const greetingLabel = `Hello${user?.username ? `, ${user.username}` : ''}`
+  const dropTransition = prefersReducedMotion
+    ? { duration: 0 }
+    : { type: 'spring', stiffness: 220, damping: 20, mass: 0.9 }
+  const introFadeTransition = prefersReducedMotion
+    ? { duration: 0 }
+    : { duration: 0.5, ease: [0.16, 1, 0.3, 1] }
+  const listBottomPadding = useMemo(() => {
+    const basePadding = 96
+    const planOffset = plan ? (isCopilotSurface ? 88 : 96) : 0
+    return basePadding + planOffset
+  }, [isCopilotSurface, plan])
+  const ListInnerElement = useMemo(
+    () =>
+      forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>((props, ref) => (
+        <div ref={ref} {...props} style={{ ...props.style, paddingBottom: listBottomPadding }} />
+      )),
+    [listBottomPadding]
+  )
+
+  useEffect(() => {
+    if (toolPanelView === 'terminal' && !terminalToolContent) {
+      setToolPanelView('tool')
+    }
+  }, [setToolPanelView, terminalToolContent, toolPanelView])
+
+  const updateMessages = useCallback((next: ChatMessageItem[]) => {
+    messagesRef.current = next
+    setMessages(next)
+  }, [])
+
+  const appendMessage = useCallback((message: ChatMessageItem) => {
+    updateMessages([...messagesRef.current, message])
+  }, [updateMessages])
+
+  const requestRestore = useCallback(() => {
+    forceRestoreRef.current = true
+    setRestoreToken((value) => value + 1)
+  }, [])
+
+  const resetConversation = useCallback((options?: { title?: string }) => {
+    messagesRef.current = []
+    setMessages([])
+    setPlan(null)
+    setTitle(options?.title ?? 'New Chat')
+    setInputMessage('')
+    setAttachments([])
+    setRecentFilesEnabled(false)
+    setCopilotStatus(null)
+    setActiveTool(null)
+    setToolPanelLive(false)
+    setQuestionPrompt(null)
+    lastToolRef.current = null
+    lastNoMessageToolRef.current = null
+    lastStepRef.current = null
+    lastReasoningRef.current = null
+    reasoningByIdRef.current = new Map()
+    reasoningLocksRef.current = new Set()
+    displayLockRef.current = null
+    if (displayLockTimerRef.current) {
+      window.clearTimeout(displayLockTimerRef.current)
+      displayLockTimerRef.current = null
+    }
+    setDisplayLockState(null)
+    bufferedEventsRef.current = []
+    toolPanelAutoOpenRef.current = false
+    pendingUserRef.current = null
+    attachmentsSeenRef.current = new Set()
+    sizeMapRef.current.clear()
+    if (introTimerRef.current) {
+      window.clearTimeout(introTimerRef.current)
+      introTimerRef.current = null
+    }
+    setWelcomeIntroState('center')
+    setRealTime(true)
+    realTimeRef.current = true
+  }, [])
+
+  const getCachedEvents = useCallback((sessionIdValue?: string | null) => {
+    if (!sessionIdValue) return null
+    return sessionEventCacheRef.current.get(sessionIdValue) ?? null
+  }, [])
+
+  const replaceCachedEvents = useCallback((sessionIdValue: string, events: AgentSSEEvent[]) => {
+    sessionEventCacheRef.current.set(sessionIdValue, [...events])
+  }, [])
+
+  const appendCachedEvent = useCallback((sessionIdValue: string, event: AgentSSEEvent) => {
+    const existing = sessionEventCacheRef.current.get(sessionIdValue)
+    if (existing) {
+      existing.push(event)
+      return
+    }
+    sessionEventCacheRef.current.set(sessionIdValue, [event])
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) {
+        window.clearTimeout(highlightTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    sessionsRef.current = sessions
+  }, [sessions])
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId ?? null
+    autoEnsureKeyRef.current = null
+  }, [sessionId])
+
+  useEffect(() => {
+    draftSessionIdRef.current = draftSessionId
+  }, [draftSessionId])
+
+  useEffect(() => {
+    const wasVisible = lastVisibleRef.current
+    const modeChanged = lastModeRef.current != null && lastModeRef.current !== mode
+    lastVisibleRef.current = isVisible
+    lastModeRef.current = mode
+    if (!isVisible) return
+    if (!modeChanged && wasVisible) return
+
+    if (mode === 'welcome') {
+      void reloadSessionSummaries()
+    }
+    if (!projectId || readOnlyMode || isShareView) return
+    if (sessionIdRef.current) {
+      if (!isRestoring) {
+        requestRestore()
+      }
+      return
+    }
+    void loadLatestSession({ force: true })
+  }, [
+    isShareView,
+    isRestoring,
+    loadLatestSession,
+    mode,
+    projectId,
+    readOnlyMode,
+    reloadSessionSummaries,
+    requestRestore,
+    visible,
+  ])
+
+  const upsertSession = useCallback(
+    (sessionIdValue: string, patch: Partial<SessionListItem>, options?: { forceTop?: boolean }) => {
+      setSessions((current) => {
+        const next = [...current]
+        const index = next.findIndex((item) => item.session_id === sessionIdValue)
+        const existing = index >= 0 ? next[index] : null
+        const updated = {
+          ...(existing ?? {}),
+          session_id: sessionIdValue,
+          title: patch.title ?? existing?.title ?? null,
+          latest_message: patch.latest_message ?? existing?.latest_message ?? null,
+          latest_message_at: patch.latest_message_at ?? existing?.latest_message_at ?? null,
+          updated_at: patch.updated_at ?? existing?.updated_at ?? null,
+          status: patch.status ?? existing?.status ?? null,
+          is_shared: patch.is_shared ?? existing?.is_shared ?? false,
+          ...patch,
+        }
+        if (index >= 0) {
+          next[index] = updated
+          if (!options?.forceTop) {
+            sessionsRef.current = next
+            return next
+          }
+          next.splice(index, 1)
+          next.unshift(updated)
+          sessionsRef.current = next
+          return next
+        }
+        if (options?.forceTop) {
+          next.unshift(updated)
+          sessionsRef.current = next
+          return next
+        }
+        next.push(updated)
+        sessionsRef.current = next
+        return next
+      })
+    },
+    [setSessions]
+  )
+
+  const loadLatestSession = useCallback(
+    async (options?: { force?: boolean; limit?: number }) => {
+      if (!projectId || readOnlyMode || isShareView) return null
+      if (!options?.force && latestSessionLoadedRef.current === projectId) return null
+      try {
+        const latest = await getLatestSession(projectId, options?.limit)
+        if (!latest?.session_id) return null
+        latestSessionLoadedRef.current = projectId
+
+        const latestId = latest.session_id
+        upsertSession(
+          latestId,
+          {
+            title: latest.title ?? 'New Chat',
+            status: latest.status ?? null,
+            latest_message: latest.latest_message ?? null,
+            latest_message_at: latest.latest_message_at ?? null,
+            updated_at: latest.updated_at ?? null,
+          },
+          { forceTop: true }
+        )
+
+        const normalizedEvents: AgentSSEEvent[] = []
+        for (const rawEvent of latest.events ?? []) {
+          const normalized = normalizeRestoredEvent(rawEvent)
+          if (normalized) normalizedEvents.push(normalized)
+        }
+        if (normalizedEvents.length > 0) {
+          replaceCachedEvents(latestId, normalizedEvents)
+          const lastEvent = normalizedEvents[normalizedEvents.length - 1]
+          const lastEventId = (lastEvent.data as { event_id?: string }).event_id
+          if (typeof lastEventId === 'string') {
+            setLastEventId(latestId, lastEventId)
+          }
+        }
+
+        if (!sessionIdRef.current && !draftSessionIdRef.current) {
+          setSessionId(projectId, latestId)
+        }
+
+        return latestId
+      } catch {
+        return null
+      }
+    },
+    [
+      draftSessionIdRef,
+      isShareView,
+      projectId,
+      readOnlyMode,
+      replaceCachedEvents,
+      setLastEventId,
+      setSessionId,
+      upsertSession,
+    ]
+  )
+
+  useEffect(() => {
+    if (mode !== 'welcome') return
+    void loadLatestSession()
+  }, [loadLatestSession, mode])
+
+  useEffect(() => {
+    if (!sessionId || title !== 'New Chat') return
+    const session = sessions.find((item) => item.session_id === sessionId)
+    if (session?.title) {
+      setTitle(session.title)
+    }
+  }, [sessionId, sessions, title])
+
+  const isEmptySession = useCallback((session: SessionListItem) => {
+    const titleValue = typeof session.title === 'string' ? session.title.trim() : ''
+    const messageValue =
+      typeof session.latest_message === 'string' ? session.latest_message.trim() : ''
+    const normalizedTitle = titleValue.toLowerCase()
+    const isPlaceholderTitle = normalizedTitle === 'new chat' || normalizedTitle === 'new task'
+    return !messageValue && (!titleValue || isPlaceholderTitle)
+  }, [])
+
+  const filteredSessions = useMemo(
+    () =>
+      sessions.filter((session) => {
+        if (!isEmptySession(session)) return true
+        return session.session_id === sessionId
+      }),
+    [isEmptySession, sessionId, sessions]
+  )
+
+  const draftSession = useMemo<SessionListItem | null>(() => {
+    if (!draftSessionId) return null
+    return {
+      session_id: draftSessionId,
+      title: 'New Chat',
+      latest_message: null,
+      latest_message_at: null,
+      updated_at: Math.floor(Date.now() / 1000),
+      status: null,
+      is_shared: false,
+    }
+  }, [draftSessionId])
+
+  const visibleSessions = useMemo(
+    () => (draftSession ? [draftSession, ...filteredSessions] : filteredSessions),
+    [draftSession, filteredSessions]
+  )
+
+  const activeSessionIdForList = sessionId ?? draftSessionId ?? null
+  const triggerSessionHighlight = useCallback((sessionIdValue: string) => {
+    setHighlightSessionId(sessionIdValue)
+    if (highlightTimerRef.current) {
+      window.clearTimeout(highlightTimerRef.current)
+    }
+    highlightTimerRef.current = window.setTimeout(() => {
+      setHighlightSessionId((current) => (current === sessionIdValue ? null : current))
+    }, 900)
+  }, [])
+
+  useEffect(() => {
+    if (!showHistoryPanel) return
+    historyOpenPreferenceRef.current = historyOpen
+  }, [historyOpen, showHistoryPanel])
+
+  useEffect(() => {
+    if (!showHistoryPanel) {
+      if (historyOpen) {
+        setHistoryOpen(false)
+      }
+      return
+    }
+    const preferred = historyOpenPreferenceRef.current
+    if (historyOpen !== preferred) {
+      setHistoryOpen(preferred)
+    }
+  }, [historyOpen, showHistoryPanel])
+
+  useEffect(() => {
+    autoScrollRef.current = false
+  }, [mode, sessionId])
+
+  useEffect(() => {
+    if (!introEnabled) {
+      if (welcomeIntroState !== 'done') {
+        setWelcomeIntroState('done')
+      }
+      return
+    }
+    if (welcomeIntroState === 'dropping') return
+    if (!isRestoring && messages.length === 0) {
+      if (welcomeIntroState !== 'center') {
+        setWelcomeIntroState('center')
+      }
+      return
+    }
+    if (welcomeIntroState !== 'done') {
+      setWelcomeIntroState('done')
+    }
+  }, [introEnabled, isRestoring, messages.length, welcomeIntroState])
+
+  useEffect(() => {
+    return () => {
+      if (introTimerRef.current) {
+        window.clearTimeout(introTimerRef.current)
+        introTimerRef.current = null
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    toolCallSeenRef.current = new Set()
+    statusToolSeenRef.current = new Set()
+    setToolCallCount(0)
+  }, [sessionId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const stored = window.localStorage.getItem(toolPanelSizeKey)
+    if (!stored) return
+    const parsed = Number(stored)
+    if (!Number.isFinite(parsed)) return
+    const clamped = Math.min(TOOL_PANEL_MAX_SIZE, Math.max(TOOL_PANEL_MIN_SIZE, parsed))
+    setToolPanelSize(clamped)
+  }, [toolPanelSizeKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(toolPanelSizeKey, String(toolPanelSize))
+  }, [toolPanelSize, toolPanelSizeKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const media = window.matchMedia(`(max-width: ${TOOL_PANEL_BREAKPOINT}px)`)
+    const update = () => setIsCompactView(media.matches)
+    update()
+    if (media.addEventListener) {
+      media.addEventListener('change', update)
+      return () => media.removeEventListener('change', update)
+    }
+    media.addListener(update)
+    return () => media.removeListener(update)
+  }, [])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    if (!toolPanelMountId) {
+      setToolPanelMount(null)
+      return
+    }
+    setToolPanelMount(document.getElementById(toolPanelMountId))
+  }, [toolPanelMountId])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    if (!sessionListMountId) {
+      setSessionListMount(null)
+      return
+    }
+    setSessionListMount(document.getElementById(sessionListMountId))
+  }, [sessionListMountId])
+
+  useEffect(() => {
+    const handleTakeoverEvent = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        sessionId?: string
+        active?: boolean
+      }>
+      const detail = customEvent.detail || {}
+      if (typeof detail.active === 'boolean') {
+        setTakeoverActive(detail.active)
+        if (!detail.active) {
+          setTakeoverSessionId('')
+        }
+      }
+      if (typeof detail.sessionId === 'string') {
+        setTakeoverSessionId(detail.sessionId)
+      }
+    }
+
+    window.addEventListener('takeover', handleTakeoverEvent as EventListener)
+    window.addEventListener('ai-manus:browser:takeover', handleTakeoverEvent as EventListener)
+
+    return () => {
+      window.removeEventListener('takeover', handleTakeoverEvent as EventListener)
+      window.removeEventListener('ai-manus:browser:takeover', handleTakeoverEvent as EventListener)
+    }
+  }, [])
+
+  const startNewSession = useCallback(() => {
+    if (!projectId || readOnlyMode) return
+    clearSessionId(projectId)
+    setDraftSessionId(`draft-${Date.now()}`)
+    setToolPanelView('tool')
+    setToolPanelOpen(true)
+    resetConversation()
+  }, [
+    clearSessionId,
+    projectId,
+    readOnlyMode,
+    resetConversation,
+    setDraftSessionId,
+    setToolPanelOpen,
+    setToolPanelView,
+  ])
+
+  useEffect(() => {
+    if (!showHistoryPanel || readOnlyMode) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        void startNewSession()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [readOnlyMode, showHistoryPanel, startNewSession])
+
+  const activeResource = useMemo(() => {
+    if (!activeTab) return null
+    const resourceId = activeTab.context.resourceId
+    const isFileContext = activeTab.context.type === 'file'
+    const cliRef = isFileContext && resourceId ? parseCliFileId(resourceId) : null
+    const serverRoot =
+      cliRef != null
+        ? cliServers.find((server) => server.id === cliRef.serverId)?.server_root ?? undefined
+        : undefined
+
+    let resourcePath = activeTab.context.resourcePath
+    let resourceName = activeTab.context.resourceName
+
+    if (!resourcePath && isFileContext && resourceId) {
+      if (cliRef) {
+        resourcePath = toCliResourcePath({
+          serverId: cliRef.serverId,
+          path: cliRef.path,
+          serverRoot,
+        })
+      } else {
+        const node = findNode(resourceId)
+        if (node?.path) {
+          resourcePath = toFilesResourcePath(node.path)
+        }
+        if (!resourceName && node?.name) {
+          resourceName = node.name
+        }
+      }
+    }
+
+    if (resourcePath && isFileContext) {
+      if (cliRef) {
+        if (!resourcePath.startsWith('/CLIFILES')) {
+          resourcePath = toCliResourcePath({
+            serverId: cliRef.serverId,
+            path: cliRef.path,
+            serverRoot,
+          })
+        }
+      } else if (!resourcePath.startsWith('/FILES')) {
+        resourcePath = toFilesResourcePath(resourcePath)
+      }
+    }
+
+    return {
+      tabId: activeTab.id,
+      type: activeTab.context.type,
+      resourceId,
+      resourcePath,
+      resourceName,
+      mimeType: activeTab.context.mimeType,
+      title: activeTab.title,
+      pluginId: activeTab.pluginId,
+    }
+  }, [activeTab, cliServers, findNode])
+
+  const recentFiles = useMemo(() => {
+    if (!tabs.length) return []
+    const seen = new Set<string>()
+    const files: string[] = []
+    for (const tab of tabs) {
+      if (tab.context?.type !== 'file') continue
+      const resourceId = tab.context.resourceId
+      let resourcePath = tab.context.resourcePath?.trim() || ''
+      const cliRef = resourceId ? parseCliFileId(resourceId) : null
+      const serverRoot = cliRef
+        ? cliServers.find((server) => server.id === cliRef.serverId)?.server_root ?? undefined
+        : undefined
+
+      if (!resourcePath && resourceId) {
+        if (cliRef) {
+          resourcePath = toCliResourcePath({
+            serverId: cliRef.serverId,
+            path: cliRef.path,
+            serverRoot,
+          })
+        } else {
+          const node = findNode(resourceId)
+          if (node?.path) {
+            resourcePath = toFilesResourcePath(node.path)
+          }
+        }
+      }
+
+      if (resourcePath) {
+        const isCliPath = resourcePath.startsWith('/CLIFILES')
+        if (cliRef) {
+          if (!resourcePath.startsWith('/CLIFILES')) {
+            resourcePath = toCliResourcePath({
+              serverId: cliRef.serverId,
+              path: cliRef.path,
+              serverRoot,
+            })
+          }
+        } else if (!isCliPath && !resourcePath.startsWith('/FILES')) {
+          resourcePath = toFilesResourcePath(resourcePath)
+        }
+      }
+
+      if (!resourcePath) continue
+      if (resourcePath === '/FILES' || resourcePath === '/CLIFILES') continue
+      if (seen.has(resourcePath)) continue
+      seen.add(resourcePath)
+      files.push(resourcePath)
+    }
+    return files
+  }, [cliServers, findNode, tabs])
+
+  const recentFilesAvailable = recentFiles.length > 0
+
+  useEffect(() => {
+    if (recentFilesEnabled && !recentFilesAvailable) {
+      setRecentFilesEnabled(false)
+    }
+  }, [recentFilesAvailable, recentFilesEnabled])
+
+  const handleRecentFilesToggle = useCallback(() => {
+    if (!recentFilesAvailable || readOnlyMode) return
+    setRecentFilesEnabled((prev) => !prev)
+  }, [readOnlyMode, recentFilesAvailable])
+
+  const handleRecentFilesRemove = useCallback(() => {
+    setRecentFilesEnabled(false)
+  }, [])
+
+  const buildContext = useCallback(() => {
+    const locationHref = typeof window !== 'undefined' ? window.location.href : null
+    const locationPathname = typeof window !== 'undefined' ? window.location.pathname : null
+    const pageTitle = typeof document !== 'undefined' ? document.title : null
+    const pluginManifest = activeResource?.pluginId
+      ? getBuiltinPluginManifest(activeResource.pluginId)
+      : null
+    const pluginName = pluginManifest?.name ?? activeResource?.pluginId ?? null
+
+    if (!activeResource && !locationHref && !locationPathname && !pageTitle) return null
+
+    return {
+      activeTabId: activeResource?.tabId,
+      selection: null,
+      resourceId: activeResource?.resourceId,
+      resourcePath: activeResource?.resourcePath,
+      resourceName: activeResource?.resourceName,
+      mimeType: activeResource?.mimeType,
+      title: activeResource?.title,
+      pluginId: activeResource?.pluginId,
+      pluginName: pluginName || undefined,
+      type: activeResource?.type,
+      pageUrl: locationHref || undefined,
+      pagePath: locationPathname || undefined,
+      pageTitle: pageTitle || undefined,
+    }
+  }, [activeResource])
+
+  const handleEventRef = useRef<((event: AgentSSEEvent) => void) | null>(null)
+  const handleStreamEvent = useCallback((event: AgentSSEEvent) => {
+    handleEventRef.current?.(event)
+  }, [])
+  const { sendMessage, stop, restoreSession, connection, isStreaming } = useSSESession({
+    sessionId,
+    projectId,
+    onEvent: handleStreamEvent,
+  })
+  const isDisplayStreaming = Boolean(displayLockState)
+  const isStreamActive = isStreaming || isDisplayStreaming
+
+  useEffect(() => {
+    followRef.current = follow
+  }, [follow])
+
+  useEffect(() => {
+    if (mode !== 'welcome' || !openToolPanel) return
+    toolPanelAutoOpenRef.current = true
+    setToolPanelOpen(true)
+    setToolPanelView('tool')
+  }, [mode, openToolPanel, sessionId])
+
+  const shouldBufferEvent = useCallback((event: AgentSSEEvent) => {
+    if (restoringRef.current) return false
+    const isMessageDelta =
+      event.event === 'message' &&
+      typeof (event.data as Partial<MessageEventData>)?.delta === 'string' &&
+      Boolean((event.data as Partial<MessageEventData>).delta)
+    if (isMessageDelta) return false
+    if (event.event === 'message') {
+      const messageData = event.data as Partial<MessageEventData>
+      if (messageData.metadata?.question_tool) return false
+    }
+    if (reasoningLocksRef.current.size > 0) {
+      if (BUFFER_PASSTHROUGH_EVENTS.has(event.event)) return false
+      if (event.event !== 'reasoning' && event.event !== 'error') return true
+    }
+    const displayLock = displayLockRef.current
+    if (!displayLock) return false
+    if (event.event === 'error') return false
+    if (BUFFER_PASSTHROUGH_EVENTS.has(event.event)) return false
+    if (event.event === 'reasoning') {
+      const reasoningData = event.data as Partial<ReasoningEventData>
+      const reasoningId = typeof reasoningData.reasoning_id === 'string' ? reasoningData.reasoning_id : ''
+      const kind = coerceReasoningKind(reasoningData.kind)
+      const reasoningKey = buildReasoningKey(reasoningId, kind)
+      const message = reasoningByIdRef.current.get(reasoningKey)
+      if (displayLock.kind === 'reasoning' && message?.id === displayLock.id) return false
+      return true
+    }
+    if (event.event === 'tool') {
+      const toolData = event.data as Partial<ToolEventData>
+      const toolCallId = typeof toolData.tool_call_id === 'string' ? toolData.tool_call_id : ''
+      if (displayLock.kind === 'tool' && toolCallId && toolCallId === displayLock.id) return false
+      return true
+    }
+    if (event.event === 'message') {
+      const messageData = event.data as Partial<MessageEventData>
+      const messageId = typeof messageData.event_id === 'string' ? messageData.event_id : ''
+      if (displayLock.kind === 'assistant' && messageId && messageId === displayLock.id) return false
+      return true
+    }
+    return true
+  }, [])
+
+  const flushBufferedEvents = useCallback(() => {
+    if (bufferedEventsRef.current.length === 0) return
+    const queued = bufferedEventsRef.current
+    bufferedEventsRef.current = []
+    window.setTimeout(() => {
+      const handler = handleEventRef.current
+      if (!handler) return
+      const drainNext = () => {
+        if (queued.length === 0) return
+        const nextEvent = queued[0]
+        if (shouldBufferEvent(nextEvent)) {
+          bufferedEventsRef.current = queued.concat(bufferedEventsRef.current)
+          return
+        }
+        queued.shift()
+        handler(nextEvent)
+        if (queued.length > 0) {
+          window.setTimeout(drainNext, 0)
+        }
+      }
+      drainNext()
+    }, 0)
+  }, [shouldBufferEvent])
+
+  useEffect(() => {
+    realTimeRef.current = realTime
+  }, [realTime])
+
+  useEffect(() => {
+    if (!projectId) return
+    if (mode !== 'welcome') return
+    void loadCliServers(projectId)
+  }, [loadCliServers, mode, projectId])
+
+  useEffect(() => {
+    if (!projectId) return
+    if (executionTarget === 'cli' && cliServers.length > 0 && !cliServerId) {
+      setCliServerId(projectId, cliServers[0].id)
+    }
+    if (executionTarget === 'cli' && cliServers.length === 0) {
+      setExecutionTarget(projectId, 'sandbox', null)
+    }
+  }, [cliServers, cliServerId, executionTarget, projectId, setCliServerId, setExecutionTarget])
+
+  const ensureSession = useCallback(async () => {
+    if (!projectId) {
+      addToast({
+        type: 'error',
+        title: 'No project selected',
+        description: 'Open a project before starting a conversation.',
+      })
+      return null
+    }
+    if (sessionIdRef.current) return sessionIdRef.current
+    if (ensureSessionPromiseRef.current?.projectId === projectId) {
+      return ensureSessionPromiseRef.current.promise
+    }
+
+    const createPromise = createSession(projectId)
+      .then((created) => {
+        const activeSessionId = sessionIdRef.current
+        const shouldAdopt = !activeSessionId
+
+        if (shouldAdopt) {
+          skipRestoreRef.current = true
+          setDraftSessionId(null)
+          setSessionId(projectId, created.session_id)
+          setLastEventId(created.session_id, null)
+        }
+
+        upsertSession(
+          created.session_id,
+          {
+            title: created.title ?? 'New Chat',
+            status: created.status ?? 'pending',
+            latest_message: null,
+            latest_message_at: Math.floor(Date.now() / 1000),
+            updated_at: Math.floor(Date.now() / 1000),
+          },
+          { forceTop: true }
+        )
+
+        if (shouldAdopt) {
+          triggerSessionHighlight(created.session_id)
+          setToolPanelOpen(true)
+        }
+
+        return activeSessionId ?? created.session_id
+      })
+      .catch(() => {
+        addToast({
+          type: 'error',
+          title: 'Unable to create session',
+          description: 'Please try again in a moment.',
+        })
+        return null
+      })
+      .finally(() => {
+        ensureSessionPromiseRef.current = null
+      })
+
+    ensureSessionPromiseRef.current = { projectId, promise: createPromise }
+    return createPromise
+  }, [
+    addToast,
+    projectId,
+    setDraftSessionId,
+    setLastEventId,
+    setSessionId,
+    setToolPanelOpen,
+    triggerSessionHighlight,
+    upsertSession,
+  ])
+
+  useEffect(() => {
+    if (mode !== 'welcome' || !toolPanelEnabled || readOnlyMode) return
+    if (!projectId) {
+      autoEnsureKeyRef.current = null
+      return
+    }
+    if (!toolPanelOpenValue || toolPanelView !== 'terminal') {
+      autoEnsureKeyRef.current = null
+      return
+    }
+    if (sessionId) {
+      autoEnsureKeyRef.current = null
+      return
+    }
+    const autoKey = `${projectId ?? 'project'}:${draftSessionId ?? 'draft'}`
+    if (autoEnsureKeyRef.current === autoKey) return
+    autoEnsureKeyRef.current = autoKey
+    void ensureSession()
+  }, [
+    draftSessionId,
+    ensureSession,
+    mode,
+    projectId,
+    readOnlyMode,
+    sessionId,
+    toolPanelEnabled,
+    toolPanelOpenValue,
+    toolPanelView,
+  ])
+
+  useEffect(() => {
+    if (mode !== 'welcome' || !toolPanelEnabled) return
+    if (activeTool) return
+    if (toolPanelView === 'terminal') return
+    setToolPanelView('terminal')
+  }, [activeTool, mode, toolPanelEnabled, toolPanelView])
+
+  const handleSubmit = useCallback(async () => {
+    const text = inputMessage.trim()
+    if (!text || readOnlyMode) return
+
+    if (introEnabled && welcomeIntroState === 'center') {
+      if (introTimerRef.current) {
+        window.clearTimeout(introTimerRef.current)
+        introTimerRef.current = null
+      }
+      if (prefersReducedMotion) {
+        setWelcomeIntroState('done')
+      } else {
+        setWelcomeIntroState('dropping')
+        introTimerRef.current = window.setTimeout(() => {
+          setWelcomeIntroState('done')
+          introTimerRef.current = null
+        }, 520)
+      }
+    }
+
+    const resolvedSessionId = await ensureSession()
+    if (!resolvedSessionId) return
+
+    const preparedAttachments = normalizeAttachments(attachments, resolvedSessionId).filter(
+      (file) => file.status === 'success'
+    )
+
+    pendingUserRef.current = {
+      content: text,
+      attachments: preparedAttachments,
+    }
+
+    appendMessage({
+      id: createMessageId('user'),
+      type: 'user',
+      content: {
+        content: text,
+        timestamp: Math.floor(Date.now() / 1000),
+      } as MessageContent,
+    })
+
+    if (preparedAttachments.length > 0) {
+      appendMessage({
+        id: createMessageId('attachments'),
+        type: 'attachments',
+        content: {
+          role: 'user',
+          attachments: preparedAttachments,
+          timestamp: Math.floor(Date.now() / 1000),
+        } as AttachmentsContent,
+      })
+    }
+
+    setInputMessage('')
+    setAttachments([])
+    setRecentFilesEnabled(false)
+
+    const contextSnapshot = buildContext()
+    await sendMessage({
+      sessionId: resolvedSessionId,
+      message: text,
+      attachments: preparedAttachments,
+      recentFiles: recentFilesEnabled ? recentFiles : undefined,
+      surface: mode,
+      executionTarget,
+      cliServerId,
+      metadata: contextSnapshot ? { context: contextSnapshot } : undefined,
+    })
+  }, [
+    appendMessage,
+    attachments,
+    buildContext,
+    cliServerId,
+    ensureSession,
+    executionTarget,
+    inputMessage,
+    mode,
+    prefersReducedMotion,
+    readOnlyMode,
+    recentFiles,
+    recentFilesEnabled,
+    setWelcomeIntroState,
+    sendMessage,
+    introEnabled,
+    welcomeIntroState,
+  ])
+
+  const handleStop = async () => {
+    if (!sessionId) return
+    stop()
+    await stopSession(sessionId)
+  }
+
+  const handleSessionSelect = useCallback(
+    (nextId: string) => {
+      if (!projectId) return
+      if (draftSessionId && nextId === draftSessionId) return
+      setDraftSessionId(null)
+      setSessionId(projectId, nextId)
+    },
+    [draftSessionId, projectId, setDraftSessionId, setSessionId]
+  )
+
+  const handleSessionDelete = useCallback(
+    async (targetId: string) => {
+      if (!projectId || readOnlyMode) return
+      if (draftSessionId && targetId === draftSessionId) {
+        setDraftSessionId(null)
+        resetConversation()
+        return
+      }
+      const confirmDelete = window.confirm('Delete this session? This cannot be undone.')
+      if (!confirmDelete) return
+      try {
+        await deleteSession(targetId)
+        setSessions((current) => current.filter((item) => item.session_id !== targetId))
+        if (sessionId === targetId) {
+          clearSessionId(projectId)
+          setLastEventId(targetId, null)
+          resetConversation()
+        }
+      } catch (error) {
+        addToast({
+          type: 'error',
+          title: 'Unable to delete session',
+          description: 'Please try again in a moment.',
+        })
+      }
+    },
+    [
+      addToast,
+      clearSessionId,
+      draftSessionId,
+      projectId,
+      readOnlyMode,
+      resetConversation,
+      sessionId,
+      setLastEventId,
+      setDraftSessionId,
+      setSessions,
+    ]
+  )
+
+  useEffect(() => {
+    if (!fileListOpen || !sessionId) return
+    let active = true
+    setSessionFilesLoading(true)
+    getSessionFiles(sessionId)
+      .then((files) => {
+        if (!active) return
+        setSessionFiles(files)
+      })
+      .catch(() => {
+        if (!active) return
+        addToast({
+          type: 'error',
+          title: 'Unable to load session files',
+          description: 'Please try again later.',
+        })
+      })
+      .finally(() => {
+        if (active) {
+          setSessionFilesLoading(false)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [addToast, fileListOpen, sessionId])
+
+  const syncMeta = useCallback(() => {
+    const meta: AiManusChatMeta = {
+      threadId: sessionId ?? null,
+      historyOpen,
+      isResponding: isStreamActive,
+      ready: Boolean(sessionId),
+      error: connection.error ?? null,
+      title,
+      toolPanelVisible,
+    }
+    onMetaChange?.(meta)
+  }, [connection.error, historyOpen, isStreamActive, onMetaChange, sessionId, title, toolPanelVisible])
+
+  useEffect(() => {
+    syncMeta()
+  }, [syncMeta])
+
+  useEffect(() => {
+    const actions: AiManusChatActions = {
+      toggleHistory: () => {
+        if (!showHistoryPanel) return
+        setHistoryOpen((value) => !value)
+      },
+      startNewThread: startNewSession,
+      setThreadId: (threadId) => {
+        if (!projectId) return
+        setDraftSessionId(null)
+        if (!threadId) {
+          clearSessionId(projectId)
+          resetConversation()
+          return
+        }
+        setSessionId(projectId, threadId)
+      },
+      focusComposer: () => {
+        composerRef.current?.focus()
+      },
+      setComposerValue: (text, focus = false) => {
+        setInputMessage(text)
+        if (focus) {
+          window.setTimeout(() => composerRef.current?.focus(), 0)
+        }
+      },
+      submitComposer: () => {
+        handleSubmit()
+      },
+      openToolPanel: () => {
+        if (mode !== 'welcome' || !toolPanelEnabled) return
+        if (activeTool) {
+          setToolPanelView('tool')
+          setToolPanelOpen(true)
+          return
+        }
+        const lastTool = lastNoMessageToolRef.current
+        if (lastTool) {
+          setActiveTool(lastTool)
+          setToolPanelLive(lastTool.status === 'calling')
+          setToolPanelView('tool')
+          setToolPanelOpen(true)
+          return
+        }
+        const openTerminal = async () => {
+          const resolvedSessionId = await ensureSession()
+          if (!resolvedSessionId) return
+          setToolPanelView('terminal')
+          setToolPanelOpen(true)
+        }
+        void openTerminal()
+      },
+    }
+    onActionsChange?.(actions)
+    return () => {
+      onActionsChange?.(null)
+    }
+  }, [
+    activeTool,
+    clearSessionId,
+    handleSubmit,
+    ensureSession,
+    mode,
+    onActionsChange,
+    projectId,
+    resetConversation,
+    setDraftSessionId,
+    setSessionId,
+    setToolPanelOpen,
+    setToolPanelView,
+    showHistoryPanel,
+    startNewSession,
+    toolPanelEnabled,
+  ])
+
+  useEffect(() => {
+    if (!prefill) return
+    setInputMessage(prefill.text)
+    if (prefill.focus) {
+      window.setTimeout(() => composerRef.current?.focus(), 0)
+    }
+  }, [prefill])
+
+  useEffect(() => {
+    if (toolPanelEnabled) return
+    setToolPanelLive(false)
+  }, [toolPanelEnabled])
+
+  const isLastNoMessageTool = useCallback((tool: ToolContent) => {
+    return tool.tool_call_id === lastNoMessageToolRef.current?.tool_call_id
+  }, [])
+
+  const canAutoOpenToolPanel = useCallback((tool: ToolContent) => {
+    const category = resolveToolCategory(tool)
+    return category === 'shell' || category === 'search' || category === 'file'
+  }, [])
+
+  const isLiveTool = useCallback(
+    (tool: ToolContent) => {
+      if (tool.status === 'calling') return true
+      if (!isLastNoMessageTool(tool)) return false
+      const timestampMs = normalizeTimestampMs(tool.timestamp)
+      if (!timestampMs) return false
+      return timestampMs > Date.now() - 5 * 60 * 1000
+    },
+    [isLastNoMessageTool]
+  )
+
+  const handleToolPanelOpen = useCallback(
+    (tool: ToolContent, live: boolean, forceOpen = false) => {
+      setActiveTool(tool)
+      setToolPanelLive(live)
+      setToolPanelView('tool')
+      if (!toolPanelEnabled) return
+      if (forceOpen) {
+        setToolPanelOpen(true)
+      }
+    },
+    [toolPanelEnabled, setToolPanelView]
+  )
+
+  useEffect(() => {
+    if (mode !== 'welcome' || !openToolPanel) return
+    if (!toolPanelAutoOpenRef.current) return
+    if (restoringRef.current) return
+    const lastTool = lastNoMessageToolRef.current
+    if (lastTool) {
+      if (canAutoOpenToolPanel(lastTool)) {
+        handleToolPanelOpen(lastTool, isLiveTool(lastTool), true)
+      }
+      toolPanelAutoOpenRef.current = false
+      return
+    }
+    const openTerminal = async () => {
+      const resolvedSessionId = sessionId ?? (await ensureSession())
+      if (!resolvedSessionId) return
+      setToolPanelView('terminal')
+      setToolPanelOpen(true)
+    }
+    void openTerminal()
+    toolPanelAutoOpenRef.current = false
+  }, [canAutoOpenToolPanel, ensureSession, handleToolPanelOpen, isLiveTool, mode, openToolPanel, sessionId])
+
+  const collapseActiveReasoning = useCallback(() => {
+    const active = lastReasoningRef.current
+    if (!active || active.collapsed) return
+    active.collapsed = true
+    updateMessages([...messagesRef.current])
+  }, [updateMessages])
+
+  const handleQuestionSubmit = useCallback(
+    async (payload: {
+      answers: Record<string, string | number | boolean | Array<string | number>>
+      text: string
+    }) => {
+      if (!sessionId || !questionPrompt) {
+        throw new Error('question_prompt_unavailable')
+      }
+      try {
+        await submitToolOutput(sessionId, questionPrompt.toolCallId, payload)
+        setQuestionPrompt(null)
+        setCopilotStatus(null)
+      } catch (error) {
+        addToast({
+          type: 'error',
+          title: 'Failed to submit answers',
+          description: 'Please try again.',
+        })
+        throw error
+      }
+    },
+    [addToast, questionPrompt, sessionId]
+  )
+
+  const startDisplayLock = useCallback(
+    (id: string, kind: DisplayLockKind) => {
+      if (restoringRef.current) return
+      const current = displayLockRef.current
+      if (current) return
+      displayLockRef.current = { id, kind }
+      setDisplayLockState({ id, kind })
+      if (displayLockTimerRef.current) {
+        window.clearTimeout(displayLockTimerRef.current)
+      }
+      displayLockTimerRef.current = window.setTimeout(() => {
+        if (!displayLockRef.current) return
+        if (displayLockRef.current.id !== id || displayLockRef.current.kind !== kind) return
+        displayLockRef.current = null
+        setDisplayLockState(null)
+        displayLockTimerRef.current = null
+        flushBufferedEvents()
+      }, DISPLAY_LOCK_TIMEOUT_MS)
+    },
+    [flushBufferedEvents]
+  )
+
+  const endDisplayLock = useCallback(
+    (id: string, kind: DisplayLockKind) => {
+      const current = displayLockRef.current
+      if (!current || current.id !== id || current.kind !== kind) return
+      displayLockRef.current = null
+      setDisplayLockState(null)
+      if (displayLockTimerRef.current) {
+        window.clearTimeout(displayLockTimerRef.current)
+        displayLockTimerRef.current = null
+      }
+      flushBufferedEvents()
+    },
+    [flushBufferedEvents]
+  )
+
+  const handleEvent = useCallback(
+    (event: AgentSSEEvent) => {
+      if (!event?.data || typeof event.data !== 'object') return
+      if (!cacheReplayRef.current && sessionId) {
+        appendCachedEvent(sessionId, event)
+      }
+      const metadata = event.data?.metadata
+      if (
+        !restoringRef.current &&
+        isCopilotSurface &&
+        (metadata?.surface || metadata?.reply_to_surface) &&
+        (event.event === 'message' || event.event === 'attachments')
+      ) {
+        const role = (event.data as MessageEventData).role
+        const targetSurface =
+          role === 'assistant'
+            ? metadata.reply_to_surface ?? metadata.surface
+            : metadata.surface ?? metadata.reply_to_surface
+        if (targetSurface && targetSurface !== mode) return
+      }
+
+      const eventId = event.data?.event_id
+      const isTransientDeltaEvent =
+        (event.event === 'message' || event.event === 'reasoning') &&
+        typeof (event.data as Partial<MessageEventData>)?.delta === 'string' &&
+        Boolean((event.data as Partial<MessageEventData>).delta)
+      if (eventId && sessionId && !isTransientDeltaEvent) {
+        setLastEventId(sessionId, eventId)
+      }
+
+      if (shouldBufferEvent(event)) {
+        bufferedEventsRef.current.push(event)
+        return
+      }
+
+      if (event.event === 'message') {
+        const messageData = event.data as Partial<MessageEventData> & {
+          message?: unknown
+          text?: unknown
+        }
+        const role = coerceRole(messageData.role)
+        const delta = typeof messageData.delta === 'string' ? messageData.delta : ''
+        const timestamp = coerceTimestamp(messageData.timestamp)
+        const messageId =
+          typeof messageData.event_id === 'string' ? messageData.event_id : createMessageId(role)
+
+        if (role === 'assistant' && delta) {
+          const existingIndex = messagesRef.current.findIndex((item) => item.id === messageId)
+          if (existingIndex >= 0) {
+            const next = [...messagesRef.current]
+            const existing = next[existingIndex]
+            if (existing.type === 'assistant') {
+              const existingContent = existing.content as MessageContent
+              existingContent.content += delta
+              existingContent.status = 'in_progress'
+              existingContent.timestamp = timestamp
+              if (messageData.metadata) {
+                existingContent.metadata = messageData.metadata
+              }
+              next[existingIndex] = { ...existing, content: existingContent }
+              updateMessages(next)
+            }
+          } else {
+            appendMessage({
+              id: messageId,
+              type: 'assistant',
+              content: {
+                ...messageData,
+                role,
+                content: delta,
+                timestamp,
+                status: 'in_progress',
+              } as MessageContent,
+            })
+          }
+          if (isCopilotSurface) setCopilotStatus(null)
+          return
+        }
+
+        const contentValue =
+          typeof messageData.content === 'string'
+            ? messageData.content
+            : typeof messageData.message === 'string'
+              ? messageData.message
+              : typeof messageData.text === 'string'
+                ? messageData.text
+                : messageData.content != null
+                  ? String(messageData.content)
+                  : ''
+        const normalizedAttachments = normalizeAttachments(
+          Array.isArray(messageData.attachments) ? messageData.attachments : undefined,
+          sessionId
+        )
+        const pending = pendingUserRef.current
+        if (role === 'user' && pending) {
+          const pendingMatches =
+            contentValue.trim() === pending.content.trim() &&
+            normalizedAttachments.length === pending.attachments.length &&
+            normalizedAttachments.every((file) =>
+              pending.attachments.some((pendingFile) => pendingFile.filename === file.filename)
+            )
+          if (pendingMatches) {
+            pendingUserRef.current = null
+            return
+          }
+        }
+        if (role === 'assistant') {
+          collapseActiveReasoning()
+        }
+        let updatedExisting = false
+        if (role === 'assistant') {
+          const existingIndex = messagesRef.current.findIndex((item) => item.id === messageId)
+          if (existingIndex >= 0) {
+            const next = [...messagesRef.current]
+            const existing = next[existingIndex]
+            if (existing.type === 'assistant') {
+              const existingContent = existing.content as MessageContent
+              existingContent.content = contentValue
+              existingContent.status = 'completed'
+              existingContent.timestamp = timestamp
+              if (messageData.metadata) {
+                existingContent.metadata = messageData.metadata
+              }
+              next[existingIndex] = { ...existing, content: existingContent }
+              updateMessages(next)
+              updatedExisting = true
+            }
+          }
+        }
+
+        if (!updatedExisting) {
+          appendMessage({
+            id: messageId,
+            type: role,
+            content: {
+              ...messageData,
+              role,
+              content: contentValue,
+              timestamp,
+              ...(role === 'assistant' ? { status: 'completed' } : {}),
+            } as MessageContent,
+          })
+          if (role === 'assistant') {
+            startDisplayLock(messageId, 'assistant')
+          }
+        }
+        if (sessionId) {
+          upsertSession(sessionId, {
+            latest_message: contentValue,
+            latest_message_at: timestamp,
+            updated_at: timestamp,
+            status: restoredStatusRef.current ?? null,
+          })
+        }
+
+        if (normalizedAttachments.length > 0) {
+          const key = buildAttachmentKey(role, timestamp, normalizedAttachments)
+          if (!attachmentsSeenRef.current.has(key)) {
+            attachmentsSeenRef.current.add(key)
+            appendMessage({
+              id: createMessageId('attachments'),
+              type: 'attachments',
+              content: {
+                role,
+                attachments: normalizedAttachments,
+                timestamp,
+              } as AttachmentsContent,
+            })
+          }
+        }
+        if (isCopilotSurface) setCopilotStatus(null)
+        return
+      }
+
+      if (event.event === 'attachments') {
+        const attachmentsData = event.data as Partial<AttachmentsEventData>
+        const role = coerceRole(attachmentsData.role)
+        const timestamp = coerceTimestamp(attachmentsData.timestamp)
+        const normalized = normalizeAttachments(
+          Array.isArray(attachmentsData.attachments) ? attachmentsData.attachments : undefined,
+          sessionId
+        )
+        if (normalized.length === 0) return
+        const key = buildAttachmentKey(role, timestamp, normalized)
+        if (attachmentsSeenRef.current.has(key)) return
+        attachmentsSeenRef.current.add(key)
+        appendMessage({
+          id: createMessageId('attachments'),
+          type: 'attachments',
+          content: {
+            role,
+            attachments: normalized,
+            timestamp,
+          } as AttachmentsContent,
+        })
+        return
+      }
+
+      if (event.event === 'reasoning') {
+        const reasoningData = event.data as Partial<ReasoningEventData>
+        const reasoningId =
+          typeof reasoningData.reasoning_id === 'string' && reasoningData.reasoning_id
+            ? reasoningData.reasoning_id
+            : ''
+        if (!reasoningId) return
+        const status = reasoningData.status === 'completed' ? 'completed' : 'in_progress'
+        const delta = typeof reasoningData.delta === 'string' ? reasoningData.delta : ''
+        const contentValue =
+          typeof reasoningData.content === 'string' ? reasoningData.content : ''
+        const kind = coerceReasoningKind(reasoningData.kind)
+        const timestamp = coerceTimestamp(reasoningData.timestamp)
+        const reasoningKey = buildReasoningKey(reasoningId, kind)
+        const existing = reasoningByIdRef.current.get(reasoningKey)
+        if (kind === 'full') {
+          const summaryKey = buildReasoningKey(reasoningId, 'summary')
+          const summaryMessage = reasoningByIdRef.current.get(summaryKey)
+          if (summaryMessage && summaryMessage.type === 'reasoning') {
+            const summaryContent = summaryMessage.content as ReasoningContent
+            if (summaryContent.status !== 'completed') {
+              summaryContent.status = 'completed'
+              updateMessages([...messagesRef.current])
+            }
+          }
+        }
+        if (existing && existing.type === 'reasoning') {
+          const reasoningContent = existing.content as ReasoningContent
+          if (contentValue) {
+            reasoningContent.content = contentValue
+          } else if (delta) {
+            reasoningContent.content += delta
+          }
+          reasoningContent.status = status
+          reasoningContent.kind = kind
+          reasoningContent.timestamp = timestamp
+          updateMessages([...messagesRef.current])
+          lastReasoningRef.current = reasoningContent
+          startDisplayLock(existing.id, 'reasoning')
+          if (!restoringRef.current) {
+            if (status === 'completed') {
+              reasoningLocksRef.current.delete(reasoningId)
+              if (reasoningLocksRef.current.size === 0) {
+                flushBufferedEvents()
+              }
+            } else {
+              reasoningLocksRef.current.add(reasoningId)
+            }
+          }
+          return
+        }
+        if (!contentValue && !delta) return
+
+        const message: ChatMessageItem = {
+          id: typeof reasoningData.event_id === 'string' ? reasoningData.event_id : createMessageId('reasoning'),
+          type: 'reasoning',
+          content: {
+            reasoning_id: reasoningId,
+            status,
+            content: contentValue || delta,
+            kind,
+            timestamp,
+            collapsed: false,
+          } as ReasoningContent,
+        }
+        appendMessage(message)
+        reasoningByIdRef.current.set(reasoningKey, message)
+        lastReasoningRef.current = message.content as ReasoningContent
+        startDisplayLock(message.id, 'reasoning')
+        if (!restoringRef.current) {
+          if (status === 'completed') {
+            reasoningLocksRef.current.delete(reasoningId)
+            if (reasoningLocksRef.current.size === 0) {
+              flushBufferedEvents()
+            }
+          } else {
+            reasoningLocksRef.current.add(reasoningId)
+          }
+        }
+        return
+      }
+
+      if (event.event === 'tool') {
+        const toolData = event.data as Partial<ToolEventData>
+        const functionName = typeof toolData.function === 'string' ? toolData.function : ''
+        const toolCallId =
+          typeof toolData.tool_call_id === 'string' && toolData.tool_call_id
+            ? toolData.tool_call_id
+            : createMessageId('tool')
+        const status =
+          toolData.status === 'calling' || toolData.status === 'called' ? toolData.status : 'called'
+        const toolName = typeof toolData.name === 'string' ? toolData.name : ''
+
+        if (!restoringRef.current && status === 'calling' && toolName !== 'message') {
+          const seen = toolCallSeenRef.current
+          if (!seen.has(toolCallId)) {
+            seen.add(toolCallId)
+            setToolCallCount((count) => count + 1)
+          }
+        }
+
+        if (status === 'calling') {
+          collapseActiveReasoning()
+          if (!restoringRef.current && typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('ds:tool:call', {
+                detail: {
+                  toolCallId,
+                  function: functionName,
+                  name: toolName,
+                  status,
+                },
+              })
+            )
+          }
+        }
+
+        if (!restoringRef.current && status === 'calling') {
+          const preview = buildPdfToolPreview(toolData)
+          if (preview) {
+            previewPdfToolEffect(preview)
+          }
+        }
+
+        if (functionName === 'context_read' && status === 'calling' && sessionId) {
+          if (!restoringRef.current) {
+            const context = buildContext()
+            if (context) {
+              void submitToolOutput(sessionId, toolCallId, { context })
+            }
+          }
+          return
+        }
+
+        if (functionName === 'question_prompt') {
+          if (restoringRef.current && restoredStatusRef.current !== 'waiting') {
+            return
+          }
+          if (readOnlyMode) {
+            setQuestionPrompt(null)
+            return
+          }
+          if (status === 'calling') {
+            setQuestionPrompt({
+              toolCallId: toolCallId,
+              args: (toolData.args ?? {}) as Record<string, unknown>,
+            })
+            if (isCopilotSurface) {
+              setCopilotStatus('Waiting for your input')
+            }
+          } else if (status === 'called') {
+            setQuestionPrompt(null)
+            if (isCopilotSurface) {
+              setCopilotStatus(null)
+            }
+          }
+          return
+        }
+
+        if (functionName === 'mcp_status_update') {
+          const seen = statusToolSeenRef.current
+          const baseArgs =
+            toolData.args && typeof toolData.args === 'object' && !Array.isArray(toolData.args)
+              ? (toolData.args as Record<string, unknown>)
+              : {}
+          const statusMessage =
+            typeof baseArgs.message === 'string'
+              ? baseArgs.message
+              : typeof baseArgs.text === 'string'
+                ? baseArgs.text
+                : ''
+          const timestamp = coerceTimestamp(toolData.timestamp)
+          const eventId =
+            typeof toolData.event_id === 'string' && toolData.event_id ? toolData.event_id : ''
+          const messageId = toolCallId
+            ? `mcp-status-${toolCallId}`
+            : eventId
+              ? `mcp-status-${eventId}`
+              : `mcp-status-${createMessageId('status')}`
+          const toolContent: ToolContent = {
+            ...(toolData as ToolEventData),
+            tool_call_id: toolCallId,
+            function: functionName,
+            name: typeof toolData.name === 'string' && toolData.name ? toolData.name : 'message',
+            status,
+            args: {
+              ...baseArgs,
+              ...(statusMessage ? { message: statusMessage } : {}),
+            },
+            timestamp,
+          }
+          const existingIndex = messagesRef.current.findIndex((item) => item.id === messageId)
+          if (existingIndex >= 0) {
+            const next = [...messagesRef.current]
+            const existing = next[existingIndex]
+            if (existing.type === 'tool') {
+              next[existingIndex] = { ...existing, content: toolContent }
+              updateMessages(next)
+            }
+          } else if (statusMessage) {
+            appendMessage({
+              id: messageId,
+              type: 'tool',
+              content: toolContent,
+            })
+          }
+          if (isCopilotSurface) {
+            setCopilotStatus(null)
+          }
+          seen.add(toolCallId)
+          return
+        }
+
+        const effects = [
+          ...(toolData.ui_effect ? [toolData.ui_effect] : []),
+          ...(toolData.ui_effects ?? []),
+        ]
+        const resolvedEffects =
+          effects.length > 0 ? effects : buildFallbackEffects(toolData, status)
+        if (resolvedEffects.length > 0 && !restoringRef.current) {
+          resolvedEffects.forEach((effect) => handleUIEffect(effect, { surface: mode }))
+        }
+
+        if (isCopilotSurface) {
+          const summary = `${toolData.name ?? 'tool'} · ${functionName}`
+          setCopilotStatus(status === 'calling' ? summary : null)
+        }
+
+        const toolContent: ToolContent = {
+          ...(toolData as ToolEventData),
+          tool_call_id: toolCallId,
+          function: functionName,
+          name: typeof toolData.name === 'string' && toolData.name ? toolData.name : 'tool',
+          status,
+          args:
+            toolData.args && typeof toolData.args === 'object' && !Array.isArray(toolData.args)
+              ? (toolData.args as Record<string, unknown>)
+              : {},
+          timestamp: coerceTimestamp(toolData.timestamp),
+        }
+
+        if (functionName === 'sandbox_switch' && status === 'called' && !restoringRef.current) {
+          const args = toolContent.args as Record<string, unknown>
+          const target =
+            typeof args?.target === 'string' ? args.target.toLowerCase() : ''
+          const resultTarget =
+            typeof toolContent.content?.result === 'object' && toolContent.content?.result
+              ? String((toolContent.content?.result as Record<string, unknown>).provider_type ?? '')
+              : ''
+          const cliId =
+            typeof args?.cli_server_id === 'string' ? args.cli_server_id : ''
+          const error = toolContent.content?.error as string | undefined
+          const title = error ? 'Runtime switch failed' : 'Runtime switched'
+          const targetLabel =
+            target === 'cli' || target === 'cli_server' || resultTarget === 'cli' ? 'CLI' : 'Sandbox'
+          const description = error
+            ? error
+            : targetLabel === 'CLI' && cliId
+              ? `Now using CLI server ${cliId.slice(0, 6)}`
+              : `Now using ${targetLabel}`
+          addToast({
+            type: error ? 'error' : 'info',
+            title,
+            description,
+            duration: 6000,
+          })
+        }
+        const lastTool = lastToolRef.current
+
+        if (lastTool && lastTool.tool_call_id === toolContent.tool_call_id) {
+          Object.assign(lastTool, toolContent)
+          updateMessages([...messagesRef.current])
+        } else {
+          if (!isCopilotSurface && lastStepRef.current && lastStepRef.current.status === 'running') {
+            lastStepRef.current.tools.push(toolContent)
+            updateMessages([...messagesRef.current])
+          } else {
+            appendMessage({
+              id: toolContent.tool_call_id || createMessageId('tool'),
+              type: 'tool',
+              content: toolContent,
+            })
+          }
+          lastToolRef.current = toolContent
+        }
+        if (toolContent.name !== 'message') {
+          startDisplayLock(toolContent.tool_call_id, 'tool')
+        }
+
+        if (toolContent.name !== 'message') {
+          lastNoMessageToolRef.current = toolContent
+          if (!restoringRef.current && (realTimeRef.current || toolContent.status === 'calling')) {
+            if (canAutoOpenToolPanel(toolContent)) {
+              handleToolPanelOpen(toolContent, isLiveTool(toolContent))
+            }
+          }
+        }
+        return
+      }
+
+      if (event.event === 'step') {
+        const stepData = event.data as Partial<StepEventData>
+        const status = stepData.status
+        if (!status) return
+        const description = typeof stepData.description === 'string' ? stepData.description : ''
+        const timestamp = coerceTimestamp(stepData.timestamp)
+        const stepId = typeof stepData.id === 'string' && stepData.id ? stepData.id : createMessageId('step')
+        if (isCopilotSurface) {
+          if (status === 'completed') {
+            setCopilotStatus(null)
+          } else if (status === 'failed') {
+            setCopilotStatus('Step failed')
+          } else {
+            setCopilotStatus(`Step ${status}: ${description}`)
+          }
+        }
+        if (status === 'running') {
+          const stepContent: StepContent = {
+            ...(stepData as StepEventData),
+            id: stepId,
+            status,
+            description,
+            timestamp,
+            tools: [],
+          }
+          appendMessage({
+            id: stepId,
+            type: 'step',
+            content: stepContent,
+          })
+          lastStepRef.current = stepContent
+        } else if (status === 'completed') {
+          if (lastStepRef.current) {
+            lastStepRef.current.status = status
+            updateMessages([...messagesRef.current])
+          }
+        } else if (status === 'failed') {
+          if (isCopilotSurface) {
+            setCopilotStatus('Step failed')
+          }
+        }
+        setPlan((current) => {
+          const steps = current?.steps ? [...current.steps] : []
+          const index = steps.findIndex((step) => step.id === stepId)
+          if (index >= 0) {
+            steps[index] = {
+              ...steps[index],
+              ...(stepData as StepEventData),
+              id: stepId,
+              status,
+              description,
+              timestamp,
+            }
+          } else {
+            steps.push({
+              ...(stepData as StepEventData),
+              id: stepId,
+              status,
+              description,
+              timestamp,
+            })
+          }
+          return {
+            event_id: current?.event_id || stepData.event_id || createMessageId('plan'),
+            timestamp,
+            metadata: stepData.metadata,
+            steps,
+          }
+        })
+        return
+      }
+
+      if (event.event === 'error') {
+        const errorData = event.data as Partial<ErrorEventData>
+        const errorMessage =
+          typeof errorData.error === 'string' && errorData.error ? errorData.error : 'Unexpected error'
+        const timestamp = coerceTimestamp(errorData.timestamp)
+        appendMessage({
+          id: createMessageId('error'),
+          type: 'assistant',
+          content: {
+            content: errorMessage,
+            timestamp,
+          } as MessageContent,
+        })
+        setCopilotStatus('Error')
+        if (sessionId) {
+          upsertSession(sessionId, {
+            status: 'failed',
+            updated_at: timestamp,
+          })
+        }
+        if (!restoringRef.current) {
+          reasoningLocksRef.current.clear()
+          if (displayLockRef.current) {
+            displayLockRef.current = null
+            setDisplayLockState(null)
+          }
+          if (displayLockTimerRef.current) {
+            window.clearTimeout(displayLockTimerRef.current)
+            displayLockTimerRef.current = null
+          }
+          flushBufferedEvents()
+        }
+        return
+      }
+
+      if (event.event === 'title') {
+        const titleData = event.data as Partial<TitleEventData>
+        const nextTitle = typeof titleData.title === 'string' ? titleData.title : ''
+        if (!nextTitle) return
+        setTitle(nextTitle)
+        if (sessionId) {
+          upsertSession(sessionId, { title: nextTitle })
+        }
+        return
+      }
+
+      if (event.event === 'plan') {
+        const planData = event.data as Partial<PlanEventData>
+        setPlan({
+          ...(planData as PlanEventData),
+          steps: Array.isArray(planData.steps) ? planData.steps : [],
+          timestamp: coerceTimestamp(planData.timestamp),
+        })
+        return
+      }
+
+      if (event.event === 'wait') {
+        if (isCopilotSurface) {
+          setCopilotStatus('Waiting for your input')
+        }
+        return
+      }
+
+      if (event.event === 'done') {
+        if (isCopilotSurface) {
+          setCopilotStatus(null)
+        }
+        if (sessionId) {
+          upsertSession(sessionId, {
+            status: 'completed',
+            updated_at: Math.floor(Date.now() / 1000),
+          })
+        }
+        if (!restoringRef.current && reasoningLocksRef.current.size > 0) {
+          reasoningLocksRef.current.clear()
+          flushBufferedEvents()
+        }
+      }
+    },
+    [
+      appendCachedEvent,
+      appendMessage,
+      buildContext,
+      canAutoOpenToolPanel,
+      collapseActiveReasoning,
+      flushBufferedEvents,
+      handleToolPanelOpen,
+      isLiveTool,
+      mode,
+      readOnlyMode,
+      sessionId,
+      shouldBufferEvent,
+      startDisplayLock,
+      setLastEventId,
+      upsertSession,
+      updateMessages,
+    ]
+  )
+
+  useEffect(() => {
+    handleEventRef.current = handleEvent
+  }, [handleEvent])
+
+  useEffect(() => {
+    if (previousSessionRef.current && previousSessionRef.current !== sessionId) {
+      stop()
+      restoredSessionRef.current = null
+      restoreRetryRef.current = null
+      restoringSessionIdRef.current = null
+    }
+    previousSessionRef.current = sessionId ?? null
+  }, [sessionId, stop])
+
+  useEffect(() => {
+    if (!sessionId) {
+      restoredSessionRef.current = null
+      restoreRetryRef.current = null
+      restoringSessionIdRef.current = null
+      setIsRestoring(false)
+      return
+    }
+    if (isRestoring && restoringSessionIdRef.current === sessionId) return
+    const forceRestore = forceRestoreRef.current
+    if (forceRestore) {
+      forceRestoreRef.current = false
+    }
+    const sessionMeta = sessionsRef.current.find((item) => item.session_id === sessionId)
+    const hasStoredHistory = Boolean(sessionMeta?.latest_message || sessionMeta?.latest_message_at)
+    const hasMessages = messagesRef.current.length > 0
+    const shouldRetry = !hasMessages && hasStoredHistory && restoreRetryRef.current !== sessionId
+    if (restoredSessionRef.current === sessionId && !shouldRetry && !forceRestore) return
+    restoreRetryRef.current = shouldRetry ? sessionId : null
+    restoredSessionRef.current = sessionId
+    let active = true
+    const skipRestore = skipRestoreRef.current
+    skipRestoreRef.current = false
+    if (skipRestore) {
+      restoringSessionIdRef.current = null
+      setIsRestoring(false)
+      return () => {
+        active = false
+      }
+    }
+    restoringSessionIdRef.current = sessionId
+    const seededTitle =
+      sessionMeta?.title && sessionMeta.title.trim().length > 0 ? sessionMeta.title : 'New Chat'
+    const cachedEvents = getCachedEvents(sessionId)
+    const hasCachedEvents = Boolean(cachedEvents && cachedEvents.length > 0)
+    resetConversation({ title: seededTitle })
+    setIsRestoring(true)
+
+    if (hasCachedEvents) {
+      restoringRef.current = true
+      restoredStatusRef.current = normalizeSessionStatus(sessionMeta?.status ?? null)
+      cacheReplayRef.current = true
+      try {
+        const handler = handleEventRef.current
+        if (handler) {
+          for (const cachedEvent of cachedEvents ?? []) {
+            try {
+              handler(cachedEvent)
+            } catch (error) {
+              console.warn('[AiManus] Failed to replay cached event', error)
+            }
+          }
+        }
+      } finally {
+        cacheReplayRef.current = false
+        restoringRef.current = false
+        restoredStatusRef.current = null
+      }
+
+      const shouldResume =
+        sessionMeta?.status === 'running' ||
+        sessionMeta?.status === 'pending' ||
+        sessionMeta?.status === 'waiting'
+      if (shouldResume) {
+        const lastTool = lastNoMessageToolRef.current
+        if (lastTool && (lastTool.status === 'calling' || isLiveTool(lastTool))) {
+          if (canAutoOpenToolPanel(lastTool)) {
+            handleToolPanelOpen(lastTool, isLiveTool(lastTool))
+          }
+        }
+      }
+    }
+
+    const restore = async () => {
+      try {
+        const session = await restoreSession()
+        if (!active || !session) {
+          if (active) restoredSessionRef.current = null
+          return
+        }
+        const nextTitle =
+          session.title && session.title.trim().length > 0 ? session.title : seededTitle
+        if (hasCachedEvents) {
+          resetConversation({ title: nextTitle })
+        } else if (session.title) {
+          setTitle(session.title)
+        }
+        setRealTime(false)
+        realTimeRef.current = false
+        restoringRef.current = true
+        restoredStatusRef.current = normalizeSessionStatus(session.status ?? null)
+        try {
+          const handler = handleEventRef.current
+          if (handler) {
+            const normalizedEvents: AgentSSEEvent[] = []
+            for (const rawEvent of session.events ?? []) {
+              const normalized = normalizeRestoredEvent(rawEvent)
+              if (!normalized) continue
+              normalizedEvents.push(normalized)
+            }
+            replaceCachedEvents(sessionId, normalizedEvents)
+            cacheReplayRef.current = true
+            try {
+              for (const normalized of normalizedEvents) {
+                try {
+                  handler(normalized)
+                } catch (error) {
+                  console.warn('[AiManus] Failed to restore event', error)
+                }
+              }
+            } finally {
+              cacheReplayRef.current = false
+            }
+          }
+        } finally {
+          restoringRef.current = false
+          restoredStatusRef.current = null
+        }
+        setRealTime(true)
+        realTimeRef.current = true
+        const shouldResume =
+          session.status === 'running' || session.status === 'pending' || session.status === 'waiting'
+        if (shouldResume) {
+          const lastTool = lastNoMessageToolRef.current
+          if (lastTool && (lastTool.status === 'calling' || isLiveTool(lastTool))) {
+            if (canAutoOpenToolPanel(lastTool)) {
+              handleToolPanelOpen(lastTool, isLiveTool(lastTool))
+            }
+          }
+        }
+      } catch (error) {
+        if (active) {
+          restoredSessionRef.current = null
+        }
+      } finally {
+        if (active) {
+          setIsRestoring(false)
+          if (restoringSessionIdRef.current === sessionId) {
+            restoringSessionIdRef.current = null
+          }
+        }
+      }
+    }
+
+    void restore()
+
+    return () => {
+      active = false
+    }
+  }, [
+    canAutoOpenToolPanel,
+    cliServerId,
+    executionTarget,
+    getCachedEvents,
+    handleToolPanelOpen,
+    isRestoring,
+    isLiveTool,
+    messages.length,
+    mode,
+    resetConversation,
+    replaceCachedEvents,
+    restoreToken,
+    restoreSession,
+    sessions,
+    sessionId,
+  ])
+
+  const updateFollowFromScroll = useCallback((distance: number) => {
+    const atBottom = distance <= FOLLOW_THRESHOLD_PX
+    followRef.current = atBottom
+    setFollow(atBottom)
+    if (atBottom) {
+      userScrollRef.current = false
+      return
+    }
+    if (!programmaticScrollRef.current) {
+      userScrollRef.current = true
+    }
+  }, [])
+
+  const handleScroll = () => {
+    const container = scrollRef.current
+    if (!container) return
+    const distance = container.scrollHeight - container.scrollTop - container.clientHeight
+    updateFollowFromScroll(distance)
+  }
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (messages.length === 0) return
+    if (!isVisible) return
+    programmaticScrollRef.current = true
+    window.setTimeout(() => {
+      programmaticScrollRef.current = false
+    }, PROGRAMMATIC_SCROLL_RESET_MS)
+    if (messages.length >= VIRTUALIZE_THRESHOLD) {
+      const outer = listOuterRef.current
+      if (!listRef.current || !outer || listHeight <= 0) return
+      if (!outer.isConnected || !outer.offsetParent || outer.clientHeight === 0) return
+      window.requestAnimationFrame(() => {
+        const activeOuter = listOuterRef.current
+        if (!listRef.current || !activeOuter || !activeOuter.offsetParent) return
+        listRef.current.scrollToItem(messages.length - 1, 'end')
+      })
+      return
+    }
+    const container = scrollRef.current
+    if (!container) return
+    container.scrollTo({ top: container.scrollHeight, behavior })
+  }
+
+  useEffect(() => {
+    if (!followRef.current) return
+    if (userScrollRef.current) return
+    if (!isVisible) return
+    scrollToBottom('auto')
+  }, [messages])
+
+  useEffect(() => {
+    if (mode !== 'copilot') return
+    if (autoScrollRef.current) return
+    if (messages.length === 0) return
+    if (userScrollRef.current) return
+    if (!isVisible) return
+
+    const canAutoScroll =
+      messages.length >= VIRTUALIZE_THRESHOLD
+        ? Boolean(listRef.current && listOuterRef.current && listHeight > 0)
+        : Boolean(scrollRef.current)
+
+    if (!canAutoScroll) return
+
+    setFollow(true)
+    followRef.current = true
+    userScrollRef.current = false
+    window.requestAnimationFrame(() => {
+      scrollToBottom('auto')
+    })
+    autoScrollRef.current = true
+  }, [listHeight, messages.length, mode, scrollToBottom])
+
+  const handleToolClick = (tool: ToolContent) => {
+    if (mode !== 'welcome') return
+    setRealTime(false)
+    realTimeRef.current = false
+    handleToolPanelOpen(tool, isLiveTool(tool), true)
+  }
+
+  const handleJumpToRealTime = () => {
+    setRealTime(true)
+    realTimeRef.current = true
+    if (lastNoMessageToolRef.current) {
+      handleToolPanelOpen(lastNoMessageToolRef.current, isLiveTool(lastNoMessageToolRef.current))
+    }
+  }
+
+  const handleAttachmentClick = useCallback(
+    async (fileId: string) => {
+      const node = findNode(fileId)
+      if (!node) {
+        addToast({
+          type: 'error',
+          title: 'File not found',
+          description: 'The attachment could not be opened.',
+        })
+        return
+      }
+      await openFileInTab(node, { customData: projectId ? { projectId } : undefined })
+    },
+    [addToast, findNode, openFileInTab, projectId]
+  )
+
+  const connectionStatus = useMemo(() => {
+    if (connection.status === 'rate_limited') return 'Rate limited. Retrying…'
+    if (connection.status === 'reconnecting') return 'Reconnecting…'
+    if (connection.status === 'error') return connection.error || 'Connection error'
+    return null
+  }, [connection.error, connection.status])
+  const showCopilotStatus = Boolean(copilotStatus) && (!hideCompactMeta || isCopilotSurface)
+  const showConnectionStatus = Boolean(connectionStatus) && (!hideCompactMeta || isCopilotSurface)
+  const chatPlaceholder = questionPrompt
+    ? 'Answer the questions above to continue...'
+    : 'Give DeepScientist a task to work on...'
+
+  const visibleMessages = useMemo(() => {
+    if (messages.length >= VIRTUALIZE_THRESHOLD) return messages
+    if (messages.length <= MAX_RENDERED_MESSAGES) return messages
+    return messages.slice(-MAX_RENDERED_MESSAGES)
+  }, [messages])
+
+  const hiddenCount =
+    messages.length >= VIRTUALIZE_THRESHOLD ? 0 : messages.length - visibleMessages.length
+  const isVirtualized = messages.length >= VIRTUALIZE_THRESHOLD
+
+  const showTakeover = takeoverActive && Boolean(takeoverSessionId)
+
+  const setItemSize = useCallback((index: number, size: number) => {
+    const current = sizeMapRef.current.get(index)
+    if (current === size) return
+    sizeMapRef.current.set(index, size)
+    listRef.current?.resetAfterIndex(index)
+  }, [])
+
+  const getItemSize = useCallback((index: number) => {
+    return sizeMapRef.current.get(index) ?? DEFAULT_MESSAGE_HEIGHT
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!isVirtualized || !listWrapperRef.current) return
+    const update = () => {
+      if (!listWrapperRef.current) return
+      setListHeight(listWrapperRef.current.clientHeight)
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(listWrapperRef.current)
+    return () => observer.disconnect()
+  }, [isVirtualized])
+
+  const renderMessage = useCallback(
+    (message: ChatMessageItem) => (
+      <ChatMessage
+        key={message.id}
+        message={message}
+        compact={isCopilotSurface}
+        onToolClick={toolPanelEnabled ? handleToolClick : undefined}
+        onFileClick={handleAttachmentClick}
+        displayStreaming={displayLockState?.id === message.id}
+        streamActive={isStreamActive}
+        onDisplayComplete={endDisplayLock}
+      />
+    ),
+    [
+      handleAttachmentClick,
+      handleToolClick,
+      isCopilotSurface,
+      displayLockState?.id,
+      endDisplayLock,
+      mode,
+      toolPanelEnabled,
+    ]
+  )
+
+  const VirtualRow = useCallback(
+    ({ index, style, data }: ListChildComponentProps<{
+      items: ChatMessageItem[]
+      setSize: (rowIndex: number, size: number) => void
+      render: (message: ChatMessageItem) => ReactNode
+    }>) => {
+      const rowRef = useRef<HTMLDivElement | null>(null)
+      const message = data.items[index]
+
+      useEffect(() => {
+        const node = rowRef.current
+        if (!node) return
+        const update = () => data.setSize(index, node.getBoundingClientRect().height)
+        update()
+        if (typeof ResizeObserver === 'undefined') return
+        const observer = new ResizeObserver(update)
+        observer.observe(node)
+        return () => observer.disconnect()
+      }, [data, index])
+
+      return (
+        <div style={style}>
+          <div ref={rowRef} className={cn('mx-auto w-full pb-3', messageMaxWidthClass)}>
+            {data.render(message)}
+          </div>
+        </div>
+      )
+    },
+    [messageMaxWidthClass]
+  )
+
+  const renderRuntimeSelector = useCallback(() => {
+    if (!projectId) return null
+    return (
+      <Select
+        value={executionTarget === 'cli' && cliServerId ? `cli:${cliServerId}` : 'sandbox'}
+        onValueChange={(value) => {
+          if (!projectId) return
+          if (value === 'sandbox') {
+            setExecutionTarget(projectId, 'sandbox', null)
+            return
+          }
+          if (value.startsWith('cli:')) {
+            const nextId = value.replace('cli:', '')
+            setExecutionTarget(projectId, 'cli', nextId)
+            setCliServerId(projectId, nextId)
+          }
+        }}
+      >
+        <SelectTrigger
+          className="ds-copilot-icon-btn justify-center p-0 [&>svg]:hidden"
+          aria-label="Runtime"
+          data-tooltip={runtimeLabel}
+        >
+          <span className="flex h-4 w-4 items-center justify-center text-current">
+            <Server size={16} />
+          </span>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="sandbox">Sandbox (view-only)</SelectItem>
+          {cliServers.length === 0 ? (
+              <SelectItem value="cli:none" disabled>
+                CLI (bind server)
+              </SelectItem>
+          ) : (
+            cliServers.map((server) => (
+              <SelectItem key={server.id} value={`cli:${server.id}`}>
+                CLI (interactive): {server.name || server.hostname || server.id.slice(0, 6)}
+              </SelectItem>
+            ))
+          )}
+        </SelectContent>
+      </Select>
+    )
+  }, [cliServerId, cliServers, executionTarget, projectId, runtimeLabel, setCliServerId, setExecutionTarget])
+
+  const handleToolPanelViewChange = useCallback(
+    async (nextView: 'tool' | 'terminal') => {
+      if (nextView === 'terminal') {
+        if (!toolPanelEnabled || !canOpenTerminal) return
+        const resolvedSessionId = sessionId ?? (await ensureSession())
+        if (!resolvedSessionId) return
+        setToolPanelView('terminal')
+        setToolPanelOpen(true)
+        return
+      }
+      if (!activeTool) return
+      setToolPanelView('tool')
+    },
+    [activeTool, canOpenTerminal, ensureSession, sessionId, setToolPanelOpen, setToolPanelView, toolPanelEnabled]
+  )
+
+  const handleToolPanelResize = useCallback(
+    (size: PanelSize) => {
+      if (!Number.isFinite(size.asPercentage) || size.asPercentage < TOOL_PANEL_MIN_SIZE) return
+      const next = Math.round(size.asPercentage)
+      const clamped = Math.min(TOOL_PANEL_MAX_SIZE, Math.max(TOOL_PANEL_MIN_SIZE, next))
+      if (clamped === toolPanelSize) return
+      setToolPanelSize(clamped)
+    },
+    [toolPanelSize]
+  )
+
+  const handleOpenToolPanel = useCallback(async () => {
+    if (!toolPanelEnabled) return
+    if (activeTool) {
+      handleToolPanelOpen(activeTool, isLiveTool(activeTool), true)
+      return
+    }
+    const lastTool = lastNoMessageToolRef.current
+    if (lastTool) {
+      handleToolPanelOpen(lastTool, isLiveTool(lastTool), true)
+      return
+    }
+    const resolvedSessionId = sessionId ?? (await ensureSession())
+    if (!resolvedSessionId) return
+    setToolPanelView('terminal')
+    setToolPanelOpen(true)
+  }, [
+    activeTool,
+    ensureSession,
+    handleToolPanelOpen,
+    isLiveTool,
+    sessionId,
+    setToolPanelOpen,
+    setToolPanelView,
+    toolPanelEnabled,
+  ])
+
+  useEffect(() => {
+    if (!toolPanelEnabled || toolPanelMountActive) return
+    const panel = toolPanelRef.current
+    if (!panel) return
+    const raf = window.requestAnimationFrame(() => {
+      try {
+        if (showToolPanelInline) {
+          panel.expand()
+          panel.resize(`${toolPanelSize}%`)
+          return
+        }
+        panel.collapse()
+      } catch {
+        // Ignore transient unmount/race issues from the panel registry.
+      }
+    })
+    return () => window.cancelAnimationFrame(raf)
+  }, [showToolPanelInline, toolPanelEnabled, toolPanelMountActive, toolPanelSize])
+
+  const renderToolPanelToggle = useCallback(() => {
+    if (mode !== 'welcome') return null
+    const label = toolPanelEnabled ? 'Open Tool' : 'Tool panel unavailable on small screens'
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          void handleOpenToolPanel()
+        }}
+        disabled={!toolPanelEnabled}
+        aria-label={label}
+        data-tooltip={label}
+        className={cn('ai-manus-tool-btn', toolPanelOpenValue && 'is-active')}
+      >
+        Open Tool
+      </button>
+    )
+  }, [handleOpenToolPanel, mode, toolPanelEnabled, toolPanelOpenValue])
+
+  const chatPanel = (
+    <div className="relative flex min-w-0 flex-1 min-h-0 flex-col">
+      {mode === 'welcome' && !embedded ? (
+        showIntroCenter ? (
+          <div className="ai-manus-surface sticky top-0 z-10 flex items-center justify-between border-b border-[var(--border-light)] px-5 py-2">
+            <div className="flex items-center gap-2">
+              {showHistoryPanel && !historyOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen(true)}
+                  className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-[var(--fill-tsp-gray-main)]"
+                >
+                  <PanelLeft className="h-4 w-4 text-[var(--icon-secondary)]" />
+                </button>
+              ) : null}
+              <img src="/logo.svg" alt="DeepScientist logo" className="h-6 w-6" />
+              <span className="text-[11px] font-semibold text-[var(--text-primary)]">DeepScientist</span>
+            </div>
+            <div className="flex items-center gap-3">
+              {renderRuntimeSelector()}
+              {renderToolPanelToggle()}
+            </div>
+          </div>
+        ) : (
+          <div className="ai-manus-surface sticky top-0 z-10 border-b border-[var(--border-light)] px-5 py-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-1 items-center">
+                {showHistoryPanel && !historyOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setHistoryOpen(true)}
+                    className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-[var(--fill-tsp-gray-main)]"
+                  >
+                    <PanelLeft className="h-4 w-4 text-[var(--icon-secondary)]" />
+                  </button>
+                ) : null}
+              </div>
+              <div className={cn('flex w-full min-w-0 items-center gap-2', messageMaxWidthClass)}>
+                <div
+                  className={cn(
+                    'min-w-0 flex-1 truncate whitespace-nowrap font-medium text-[var(--text-primary)]',
+                    isCopilotSurface ? 'text-[12px]' : 'text-[13px]'
+                  )}
+                >
+                  {title}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {mode === 'welcome' && projectId ? renderRuntimeSelector() : null}
+                  {renderToolPanelToggle()}
+                  {mode === 'welcome' && sessionId ? (
+                    <button
+                      type="button"
+                      onClick={() => setFileListOpen(true)}
+                      className="ds-copilot-icon-btn"
+                      aria-label="Session files"
+                      data-tooltip="Session files"
+                    >
+                      <FileSearch size={16} className="text-current" />
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex flex-1" />
+            </div>
+          </div>
+        )
+      ) : null}
+
+      <LayoutGroup id={composerLayoutGroupId}>
+        <div className="relative flex h-full min-h-0 flex-col">
+          <div
+            className={cn(
+              'flex flex-1 min-h-0 flex-col overflow-hidden transition-opacity duration-300 ease-out motion-reduce:transition-none',
+              showIntro && 'opacity-0 pointer-events-none'
+            )}
+          >
+            {isVirtualized ? (
+              <div
+                ref={listWrapperRef}
+                className={cn('relative flex-1 overflow-hidden', isCopilotSurface ? 'px-4' : 'px-5')}
+              >
+                {listHeight > 0 ? (
+                  <VariableSizeList
+                    ref={listRef}
+                    outerRef={listOuterRef}
+                    height={listHeight}
+                    width="100%"
+                    itemCount={visibleMessages.length}
+                    itemSize={getItemSize}
+                    innerElementType={ListInnerElement}
+                    overscanCount={6}
+                    onScroll={() => {
+                      const container = listOuterRef.current
+                      if (!container) return
+                      const distance = container.scrollHeight - container.scrollTop - container.clientHeight
+                      updateFollowFromScroll(distance)
+                    }}
+                    itemData={{
+                      items: visibleMessages,
+                      setSize: setItemSize,
+                      render: renderMessage,
+                    }}
+                  >
+                    {VirtualRow}
+                  </VariableSizeList>
+                ) : null}
+                {isStreamActive && !questionPrompt ? (
+                  <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2">
+                    <LoadingIndicator text="Thinking" compact={isCopilotSurface} />
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div
+                ref={scrollRef}
+                className={cn('flex-1 overflow-y-auto', isCopilotSurface ? 'px-4' : 'px-5')}
+                onScroll={handleScroll}
+              >
+                <div
+                  className={cn(
+                    'mx-auto flex w-full flex-col gap-[12px] pt-[12px]',
+                    messageMaxWidthClass
+                  )}
+                  style={{ paddingBottom: listBottomPadding }}
+                >
+                  {hiddenCount > 0 && !hideCompactMeta ? (
+                    <div className="text-center text-[11px] text-[var(--text-tertiary)]">
+                      Showing the latest {visibleMessages.length} messages
+                    </div>
+                  ) : null}
+                  {suggestions && !suggestionsDisabled && visibleMessages.length === 0 ? (
+                    <div className="rounded-[12px] border border-[var(--border-light)] bg-[var(--background-white-main)] p-4">
+                      <div
+                        className={cn(
+                          'font-medium text-[var(--text-primary)]',
+                          isCopilotSurface ? 'text-[11px]' : 'text-[11px]'
+                        )}
+                      >
+                        {suggestions.title}
+                      </div>
+                      {suggestions.subtitle && !hideCompactMeta ? (
+                        <div
+                          className={cn(
+                            'text-[var(--text-tertiary)]',
+                            isCopilotSurface ? 'text-[10px]' : 'text-[10px]'
+                          )}
+                        >
+                          {suggestions.subtitle}
+                        </div>
+                      ) : null}
+                      <div className="mt-3 grid gap-2">
+                        {suggestions.items.map((item) => (
+                          <button
+                            key={item.label}
+                            type="button"
+                            className={cn(
+                              'rounded-[8px] border border-[var(--border-light)] px-3 py-2 text-left text-[var(--text-secondary)] hover:bg-[var(--fill-tsp-white-light)]',
+                              isCopilotSurface ? 'text-[11px]' : 'text-[11px]'
+                            )}
+                            onClick={() => onSuggestionSelect?.(item)}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {visibleMessages.map((message) => renderMessage(message))}
+                  {isStreamActive && !questionPrompt ? (
+                    <LoadingIndicator text="Thinking" compact={isCopilotSurface} />
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {showIntro ? (
+            <motion.div
+              className={cn(
+                'absolute inset-0 z-20 flex items-center justify-center px-5 transition-opacity duration-300 ease-out motion-reduce:transition-none',
+                showIntroCenter ? 'pointer-events-auto' : 'pointer-events-none'
+              )}
+              initial={false}
+              animate={{
+                opacity: showIntroCenter ? 1 : 0,
+                y: showIntroCenter ? 0 : 12,
+              }}
+              transition={introFadeTransition}
+            >
+              <div className={cn('mx-auto flex w-full flex-col items-center', messageMaxWidthClass)}>
+                <motion.div
+                  className="pb-6 text-center"
+                  initial={false}
+                  animate={{
+                    opacity: showIntroCenter ? 1 : 0,
+                    y: showIntroCenter ? 0 : -6,
+                  }}
+                  transition={introFadeTransition}
+                >
+                  <div
+                    className={cn(
+                      'font-serif text-[var(--text-primary)]',
+                      isCopilotSurface ? 'text-[28px] leading-[34px]' : 'text-[34px] leading-[42px]'
+                    )}
+                  >
+                    {greetingLabel}
+                  </div>
+                  <div
+                    className={cn(
+                      'mt-1 text-[var(--text-tertiary)]',
+                      isCopilotSurface ? 'text-[13px]' : 'text-[15px]'
+                    )}
+                  >
+                    What can I do for you?
+                  </div>
+                </motion.div>
+                {showIntroCenter ? (
+                  <motion.div
+                    layoutId={composerLayoutKey}
+                    transition={dropTransition}
+                    className="w-[80%] max-w-[820px] min-w-[260px]"
+                  >
+                    <ChatBox
+                      value={inputMessage}
+                      onChange={setInputMessage}
+                      onSubmit={handleSubmit}
+                      onStop={handleStop}
+                      isRunning={isStreamActive}
+                      attachments={attachments}
+                      onAttachmentsChange={setAttachments}
+                      recentFiles={recentFiles}
+                      recentFilesEnabled={recentFilesEnabled}
+                      onRecentFilesToggle={handleRecentFilesToggle}
+                      onRecentFilesRemove={handleRecentFilesRemove}
+                      recentFilesDisabled={!recentFilesAvailable}
+                      projectId={projectId}
+                      sessionId={sessionId}
+                      ensureSession={ensureSession}
+                      readOnly={readOnlyMode}
+                      inputDisabled={Boolean(questionPrompt)}
+                      rows={3}
+                      placeholder={chatPlaceholder}
+                      inputRef={composerRef}
+                      containerClassName="pb-0"
+                      inputClassName={cn(
+                        'min-h-[56px]',
+                        isCopilotSurface ? 'text-[14px]' : 'text-[15px]'
+                      )}
+                    />
+                  </motion.div>
+                ) : null}
+                {mode === 'welcome' ? (
+                  <motion.div
+                    className="mt-5 w-[80%] max-w-[820px] min-w-[260px]"
+                    initial={false}
+                    animate={{
+                      opacity: showIntroCenter ? 1 : 0,
+                    }}
+                    transition={introFadeTransition}
+                  >
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {WELCOME_INTRO_CARDS.map((card) => {
+                        const Icon = card.icon
+                        return (
+                          <SpotlightCard
+                            key={card.title}
+                            className={cn(
+                              'ai-manus-surface flex h-full min-h-[68px] items-center gap-3 rounded-xl border border-[var(--border-light)] px-3 py-3',
+                              'shadow-[0_14px_30px_-28px_rgba(45,42,38,0.45)]'
+                            )}
+                          >
+                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--fill-tsp-gray-main)]">
+                              <Icon className="h-4 w-4 text-[var(--icon-primary)]" />
+                            </div>
+                            <div className="text-[12px] font-semibold text-[var(--text-primary)]">
+                              {card.title}
+                            </div>
+                          </SpotlightCard>
+                        )
+                      })}
+                    </div>
+                  </motion.div>
+                ) : null}
+              </div>
+            </motion.div>
+          ) : null}
+
+          <div
+            className={cn(
+              'relative',
+              isCopilotSurface
+                ? 'mt-auto px-3 pb-1'
+                : 'mt-auto px-5 pb-5',
+              plan
+                ? isCopilotSurface
+                  ? 'pt-4'
+                  : 'pt-5'
+                : isCopilotSurface
+                  ? 'pt-3'
+                  : 'pt-4'
+            )}
+          >
+            {!follow ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setFollow(true)
+                  followRef.current = true
+                  userScrollRef.current = false
+                  scrollToBottom()
+                }}
+                className="absolute -top-16 left-1/2 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-[var(--border-main)] bg-[var(--background-white-main)] shadow-[0px_5px_16px_0px_var(--shadow-S),0px_0px_1.25px_0px_var(--shadow-S)] hover:bg-[var(--background-gray-main)]"
+              >
+                <ArrowDown size={18} />
+              </button>
+            ) : null}
+            {plan ? (
+              <div className={cn('absolute top-0 z-10 -translate-y-1/2', isCopilotSurface ? 'left-3' : 'left-5')}>
+                <PlanPanel plan={plan} sessionId={sessionId} compact={isCopilotSurface} />
+              </div>
+            ) : null}
+            {isStreamActive && !questionPrompt ? (
+              <div
+                className={cn(
+                  'pointer-events-none absolute top-0 z-10 -translate-y-1/2',
+                  isCopilotSurface ? 'right-3' : 'right-5'
+                )}
+              >
+                <OrbitLogoStatus
+                  toolCount={toolCallCount}
+                  resetKey={sessionId ?? 'new'}
+                  className="shrink-0"
+                  size="lg"
+                  compact={isCopilotSurface || isCompactView}
+                />
+              </div>
+            ) : null}
+            {showCopilotStatus && !hideCompactMeta ? (
+              <div className="pb-2 text-[11px] text-[var(--text-tertiary)]">{copilotStatus}</div>
+            ) : null}
+            {showIntroCenter ? null : introEnabled ? (
+              <motion.div layoutId={composerLayoutKey} transition={dropTransition} className="w-full">
+                <ChatBox
+                  value={inputMessage}
+                  onChange={setInputMessage}
+                  onSubmit={handleSubmit}
+                  onStop={handleStop}
+                  isRunning={isStreamActive}
+                  attachments={attachments}
+                  onAttachmentsChange={setAttachments}
+                  recentFiles={recentFiles}
+                  recentFilesEnabled={recentFilesEnabled}
+                  onRecentFilesToggle={handleRecentFilesToggle}
+                  onRecentFilesRemove={handleRecentFilesRemove}
+                  recentFilesDisabled={!recentFilesAvailable}
+                  projectId={projectId}
+                  sessionId={sessionId}
+                  ensureSession={ensureSession}
+                  readOnly={readOnlyMode}
+                  inputDisabled={Boolean(questionPrompt)}
+                  compact={isCopilotSurface}
+                  placeholder={chatPlaceholder}
+                  inputRef={composerRef}
+                />
+              </motion.div>
+            ) : (
+              <ChatBox
+                value={inputMessage}
+                onChange={setInputMessage}
+                onSubmit={handleSubmit}
+                onStop={handleStop}
+                isRunning={isStreamActive}
+                attachments={attachments}
+                onAttachmentsChange={setAttachments}
+                recentFiles={recentFiles}
+                recentFilesEnabled={recentFilesEnabled}
+                onRecentFilesToggle={handleRecentFilesToggle}
+                onRecentFilesRemove={handleRecentFilesRemove}
+                recentFilesDisabled={!recentFilesAvailable}
+                projectId={projectId}
+                sessionId={sessionId}
+                ensureSession={ensureSession}
+                readOnly={readOnlyMode}
+                inputDisabled={Boolean(questionPrompt)}
+                compact={isCopilotSurface}
+                placeholder={chatPlaceholder}
+                inputRef={composerRef}
+              />
+            )}
+            {showConnectionStatus ? (
+              <div className="mt-2 text-[11px] text-[var(--text-tertiary)]">{connectionStatus}</div>
+            ) : null}
+            {readOnlyMode && !hideCompactMeta ? (
+              <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">View only</div>
+            ) : null}
+          </div>
+          {questionPrompt ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-[96px] z-20 px-4">
+              <QuestionPrompt
+                toolCallId={questionPrompt.toolCallId}
+                args={questionPrompt.args}
+                mode={mode}
+                onSubmit={handleQuestionSubmit}
+              />
+            </div>
+          ) : null}
+        </div>
+      </LayoutGroup>
+    </div>
+  )
+
+  const toolPanelPortal =
+    toolPanelEnabled && toolPanelMountActive && toolPanelMount && toolPanelOpenValue && panelToolContent
+      ? createPortal(
+          <div className="ai-manus-tool-portal">
+            <ToolPanel
+              variant="docked"
+              open={toolPanelOpenValue}
+              toolContent={panelToolContent ?? undefined}
+              live={toolPanelLive}
+              sessionId={sessionId ?? undefined}
+              realTime={realTime}
+              isShare={readOnlyMode}
+              projectId={projectId ?? undefined}
+              executionTarget={executionTarget}
+              cliServerId={cliServerId}
+              readOnly={readOnlyMode}
+              viewMode={toolPanelView}
+              onViewModeChange={canOpenTerminal ? handleToolPanelViewChange : undefined}
+              onClose={() => {}}
+              onJumpToRealTime={handleJumpToRealTime}
+              hideClose
+            />
+          </div>,
+          toolPanelMount
+        )
+      : null
+
+  const sessionListPortal =
+    showHistoryPanel && sessionListMountActive && sessionListMount
+      ? createPortal(
+          <div className="ai-manus-session-portal">
+            <SessionListPanel
+              open={historyOpen}
+              sessions={visibleSessions}
+              activeSessionId={activeSessionIdForList}
+              highlightSessionId={highlightSessionId}
+              readOnly={sessionListReadOnly}
+              onToggle={setHistoryOpen}
+              onSelect={handleSessionSelect}
+              onNew={startNewSession}
+              onDelete={handleSessionDelete}
+            />
+          </div>,
+          sessionListMount
+        )
+      : null
+
+  return (
+    <div
+      className={cn(
+        'ai-manus-root flex h-full w-full min-h-0',
+        embedded && 'ai-manus-embedded',
+        uiSurface === 'copilot' ? 'flex-col ai-manus-copilot' : 'flex-row ai-manus-welcome',
+        uiSurface === 'copilot' && isCompactView && 'pointer-events-none'
+      )}
+    >
+      {mode === 'welcome' && showHistoryPanel && !sessionListMountActive ? (
+        <SessionListPanel
+          open={historyOpen}
+          sessions={visibleSessions}
+          activeSessionId={activeSessionIdForList}
+          highlightSessionId={highlightSessionId}
+          readOnly={sessionListReadOnly}
+          onToggle={setHistoryOpen}
+          onSelect={handleSessionSelect}
+          onNew={startNewSession}
+          onDelete={handleSessionDelete}
+        />
+      ) : null}
+
+      <div
+        className={cn(
+          'flex min-w-0 flex-1 min-h-0',
+          uiSurface === 'welcome' ? 'flex-row' : 'flex-col'
+        )}
+      >
+        {mode === 'welcome' && toolPanelEnabled && !toolPanelMountActive ? (
+          <ResizablePanelGroup className="flex-1 min-h-0 min-w-0">
+            <ResizablePanel
+              panelRef={toolPanelRef}
+              defaultSize={`${toolPanelSize}%`}
+              minSize={`${TOOL_PANEL_MIN_SIZE}%`}
+              maxSize={`${TOOL_PANEL_MAX_SIZE}%`}
+              collapsible
+              collapsedSize={0}
+              onResize={handleToolPanelResize}
+              className="min-w-0"
+            >
+              <div
+                className={cn(
+                  'ai-manus-tool-dock relative flex h-full min-w-0 flex-1 flex-col',
+                  showToolPanelInline
+                    ? 'ai-manus-fade-in border-r border-[var(--border-light)]'
+                    : 'border-r border-transparent'
+                )}
+              >
+                <ToolPanel
+                  variant="docked"
+                  open={toolPanelOpenValue}
+                  toolContent={panelToolContent ?? undefined}
+                  live={toolPanelLive}
+                  sessionId={sessionId ?? undefined}
+                  realTime={realTime}
+                  isShare={readOnlyMode}
+                  projectId={projectId ?? undefined}
+                  executionTarget={executionTarget}
+                  cliServerId={cliServerId}
+                  readOnly={readOnlyMode}
+                  viewMode={toolPanelView}
+                  onViewModeChange={canOpenTerminal ? handleToolPanelViewChange : undefined}
+                  onClose={() => setToolPanelOpen(false)}
+                  onJumpToRealTime={handleJumpToRealTime}
+                />
+              </div>
+            </ResizablePanel>
+            <ResizableHandle
+              className={cn(
+                'group bg-[var(--border-light)]/60',
+                showToolPanelInline ? 'hover:bg-[var(--border-main)]' : 'w-0 opacity-0 pointer-events-none'
+              )}
+            />
+            <ResizablePanel minSize="38%" className="min-w-0">
+              {chatPanel}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        ) : (
+          chatPanel
+        )}
+      </div>
+
+      {projectId ? (
+        <ProjectShareDialog
+          projectId={projectId}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          canManageShare={!readOnlyMode}
+        />
+      ) : null}
+
+      <SessionFilesDialog
+        open={fileListOpen}
+        onOpenChange={setFileListOpen}
+        files={sessionFiles}
+        loading={sessionFilesLoading}
+        onOpenFile={handleAttachmentClick}
+      />
+      {toolPanelPortal}
+      {sessionListPortal}
+      {showTakeover ? (
+        <div className="fixed inset-0 z-[60] bg-[var(--background-gray-main)]">
+          <div className="h-full w-full">
+            <VNCViewer sessionId={takeoverSessionId} enabled={showTakeover} viewOnly={false} />
+          </div>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+            <button
+              type="button"
+              onClick={() => {
+                setTakeoverActive(false)
+                setTakeoverSessionId('')
+              }}
+              className="inline-flex h-[36px] items-center justify-center gap-[6px] rounded-full border-2 border-[var(--border-dark)] bg-[var(--Button-primary-black)] px-[12px] text-sm font-medium text-[var(--text-onblack)] shadow-[0px_8px_32px_0px_rgba(0,0,0,0.32)] transition hover:opacity-90 active:opacity-80"
+            >
+              Exit Takeover
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+export default AiManusChatView
