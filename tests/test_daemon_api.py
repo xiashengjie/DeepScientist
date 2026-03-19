@@ -127,7 +127,7 @@ def test_daemon_update_status_uses_launcher_json_contract(
             stdout=json.dumps(
                 {
                     "ok": True,
-                    "current_version": "1.5.5",
+                    "current_version": "1.5.6",
                     "latest_version": "1.5.3",
                     "update_available": True,
                     "can_self_update": True,
