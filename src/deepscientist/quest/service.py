@@ -10,6 +10,7 @@ import json
 import mimetypes
 import re
 import threading
+import time
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
@@ -18,7 +19,7 @@ from ..artifact.metrics import build_metrics_timeline, extract_latest_metric
 from ..config import ConfigManager
 from ..connector_runtime import conversation_identity_key, normalize_conversation_id, parse_conversation_id
 from ..file_lock import advisory_file_lock
-from ..gitops import current_branch, export_git_graph, head_commit, init_repo
+from ..gitops import current_branch, export_git_graph, head_commit, init_repo, list_branch_canvas
 from ..home import repo_root
 from ..registries import BaselineRegistry
 from ..shared import append_jsonl, ensure_dir, generate_id, iter_jsonl, read_json, read_jsonl, read_jsonl_tail, read_text, read_yaml, resolve_within, run_command, sha256_text, slugify, utc_now, write_json, write_text, write_yaml
@@ -46,6 +47,9 @@ _CODEX_HISTORY_TAIL_LIMIT = 400
 _JSONL_STREAM_CHUNK_BYTES = 64 * 1024
 _EVENTS_OVERSIZED_LINE_BYTES = 8 * 1024 * 1024
 _OVERSIZED_EVENT_PREFIX_BYTES = 4096
+_PROJECTION_SCHEMA_VERSION = 1
+_PROJECTION_BUILD_TOTAL_STEPS = 3
+_PROJECTION_REFRESH_THROTTLE_SECONDS = 1.0
 _EVENT_TYPE_BYTES_RE = re.compile(rb'"(?:type|event_type)"\s*:\s*"([^"]+)"')
 _EVENT_TOOL_NAME_BYTES_RE = re.compile(rb'"tool_name"\s*:\s*"([^"]+)"')
 _EVENT_RUN_ID_BYTES_RE = re.compile(rb'"run_id"\s*:\s*"([^"]+)"')
@@ -181,6 +185,12 @@ class QuestService:
         self._runtime_state_locks: dict[str, threading.Lock] = {}
         self._artifact_projection_locks_lock = threading.Lock()
         self._artifact_projection_locks: dict[str, threading.Lock] = {}
+        self._quest_projection_locks_lock = threading.Lock()
+        self._quest_projection_locks: dict[str, threading.Lock] = {}
+        self._quest_projection_builds_lock = threading.Lock()
+        self._quest_projection_builds: dict[str, threading.Thread] = {}
+        self._quest_projection_refresh_lock = threading.Lock()
+        self._quest_projection_refresh_at: dict[str, float] = {}
 
     def _quest_root(self, quest_id: str) -> Path:
         return self.quests_root / quest_id
@@ -338,7 +348,9 @@ class QuestService:
             if value is _UNSET:
                 continue
             current[key] = str(value) if isinstance(value, Path) else value
-        return self.write_research_state(quest_root, current)
+        payload = self.write_research_state(quest_root, current)
+        self.schedule_projection_refresh(quest_root, kinds=("details", "canvas"))
+        return payload
 
     def read_lab_canvas_state(self, quest_root: Path) -> dict[str, Any]:
         self._initialize_runtime_files(quest_root)
@@ -451,6 +463,14 @@ class QuestService:
         return quest_root / ".ds" / "artifact_projection.lock"
 
     @staticmethod
+    def _metrics_timeline_cache_path(quest_root: Path) -> Path:
+        return quest_root / ".ds" / "cache" / "metrics_timeline.v1.json"
+
+    @staticmethod
+    def _metrics_timeline_cache_lock_path(quest_root: Path) -> Path:
+        return quest_root / ".ds" / "cache" / "metrics_timeline.lock"
+
+    @staticmethod
     def _json_compatible_state(value: Any) -> Any:
         if isinstance(value, tuple):
             return [QuestService._json_compatible_state(item) for item in value]
@@ -469,16 +489,8 @@ class QuestService:
         with self._artifact_projection_locks_lock:
             thread_lock = self._artifact_projection_locks.setdefault(lock_key, threading.Lock())
         with thread_lock:
-            lock_path = self._artifact_projection_lock_path(quest_root)
-            ensure_dir(lock_path.parent)
-            with lock_path.open("a+", encoding="utf-8") as handle:
-                if fcntl is not None:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-                try:
-                    yield
-                finally:
-                    if fcntl is not None:
-                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            with advisory_file_lock(self._artifact_projection_lock_path(quest_root)):
+                yield
 
     def _artifact_index_collection_state(self, quest_root: Path) -> list[list[Any]]:
         states: list[list[Any]] = []
@@ -497,6 +509,32 @@ class QuestService:
                 ]
             )
         return states
+
+    def _metrics_timeline_attachment_state(self, quest_root: Path, workspace_root: Path) -> list[list[Any]]:
+        states: list[list[Any]] = []
+        seen_paths: set[str] = set()
+        for root in (workspace_root, quest_root):
+            attachment_root = root / "baselines" / "imported"
+            if not attachment_root.exists():
+                continue
+            for path in sorted(attachment_root.glob("*/attachment.yaml")):
+                key = str(path.resolve())
+                if key in seen_paths:
+                    continue
+                seen_paths.add(key)
+                try:
+                    label = str(path.relative_to(quest_root))
+                except ValueError:
+                    label = str(path)
+                states.append([label, self._json_compatible_state(self._path_state(path))])
+        return states
+
+    def _metrics_timeline_state(self, quest_root: Path, workspace_root: Path) -> list[Any]:
+        return [
+            str(workspace_root.resolve()),
+            self._artifact_index_collection_state(quest_root),
+            self._metrics_timeline_attachment_state(quest_root, workspace_root),
+        ]
 
     def _artifact_projection_state(self, quest_root: Path) -> tuple[str, Any]:
         index_state = self._artifact_index_collection_state(quest_root)
@@ -750,6 +788,741 @@ class QuestService:
                 state_kind=state_kind,
                 state=state,
             )
+
+    def _collect_run_artifacts_raw(
+        self,
+        quest_root: Path,
+        *,
+        run_kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        artifacts_by_identity: dict[str, dict[str, Any]] = {}
+        normalized_run_kind = str(run_kind or "").strip()
+        for root in self._artifact_roots(quest_root):
+            runs_root = root / "artifacts" / "runs"
+            if not runs_root.exists():
+                continue
+            for path in sorted(runs_root.glob("*.json")):
+                item = self._read_cached_json(path, {})
+                payload = item if isinstance(item, dict) else {}
+                if normalized_run_kind and str(payload.get("run_kind") or "").strip() != normalized_run_kind:
+                    continue
+                try:
+                    mtime_ns = path.stat().st_mtime_ns
+                except OSError:
+                    mtime_ns = 0
+                artifact = {
+                    "kind": "run",
+                    "path": str(path),
+                    "payload": item,
+                    "workspace_root": str(root),
+                }
+                identity = self._artifact_item_identity(path, payload, kind="run")
+                existing = artifacts_by_identity.get(identity)
+                existing_payload = existing.get("payload") if isinstance((existing or {}).get("payload"), dict) else {}
+                existing_path = Path(str((existing or {}).get("path") or path))
+                try:
+                    existing_mtime_ns = existing_path.stat().st_mtime_ns if existing else 0
+                except OSError:
+                    existing_mtime_ns = 0
+                if existing is None or self._artifact_item_rank(
+                    payload,
+                    path=path,
+                    mtime_ns=mtime_ns,
+                ) >= self._artifact_item_rank(
+                    existing_payload,
+                    path=existing_path,
+                    mtime_ns=existing_mtime_ns,
+                ):
+                    artifacts_by_identity[identity] = artifact
+        artifacts = list(artifacts_by_identity.values())
+        artifacts.sort(
+            key=lambda item: str(
+                ((item.get("payload") or {}).get("updated_at"))
+                or ((item.get("payload") or {}).get("created_at"))
+                or item.get("path")
+                or ""
+            )
+        )
+        return artifacts
+
+    @staticmethod
+    def _projection_id(kind: str) -> str:
+        return f"{kind}.v1"
+
+    @staticmethod
+    def _projection_directory(quest_root: Path) -> Path:
+        return quest_root / ".ds" / "projections"
+
+    @classmethod
+    def _projection_manifest_path(cls, quest_root: Path) -> Path:
+        return cls._projection_directory(quest_root) / "manifest.json"
+
+    @classmethod
+    def _projection_payload_path(cls, quest_root: Path, kind: str) -> Path:
+        return cls._projection_directory(quest_root) / f"{cls._projection_id(kind)}.json"
+
+    @classmethod
+    def _projection_lock_path(cls, quest_root: Path, kind: str) -> Path:
+        return cls._projection_directory(quest_root) / f"{cls._projection_id(kind)}.lock"
+
+    def _projection_build_key(self, quest_root: Path, kind: str) -> str:
+        return f"{quest_root.resolve()}::{kind}"
+
+    def _codex_history_events_state(self, quest_root: Path) -> tuple[tuple[str, tuple[int, int, int] | None], ...]:
+        return self._glob_states(quest_root / ".ds" / "codex_history", "*/events.jsonl")
+
+    def _details_projection_state(self, quest_root: Path) -> tuple[Any, ...]:
+        workspace_root = self.active_workspace_root(quest_root)
+        core_paths = [
+            self._quest_yaml_path(quest_root),
+            quest_root / "status.md",
+            quest_root / ".ds" / "runtime_state.json",
+            quest_root / ".ds" / "research_state.json",
+            quest_root / ".ds" / "interaction_state.json",
+            quest_root / ".ds" / "bindings.json",
+            quest_root / ".ds" / "bash_exec" / "summary.json",
+            self._artifact_projection_path(quest_root),
+            workspace_root / "brief.md",
+            workspace_root / "plan.md",
+            workspace_root / "status.md",
+            workspace_root / "SUMMARY.md",
+        ]
+        return (
+            str(workspace_root.resolve()),
+            self._path_states(core_paths),
+            self._codex_meta_state(quest_root),
+            self._codex_history_events_state(quest_root),
+        )
+
+    def _git_branch_projection_state(self, quest_root: Path) -> dict[str, Any]:
+        result = run_command(
+            [
+                "git",
+                "for-each-ref",
+                "--sort=refname",
+                "--format=%(refname:short)%09%(objectname)%09%(committerdate:iso-strict)",
+                "refs/heads",
+            ],
+            cwd=quest_root,
+            check=False,
+        )
+        refs = [line.strip() for line in str(result.stdout or "").splitlines() if line.strip()]
+        if result.returncode != 0:
+            refs = [f"error:{result.returncode}:{str(result.stderr or '').strip()}"]
+        return {
+            "current_ref": current_branch(quest_root),
+            "head": head_commit(quest_root),
+            "refs": refs,
+        }
+
+    def _canvas_projection_state(self, quest_root: Path) -> tuple[Any, ...]:
+        return (
+            self._path_states(
+                [
+                    self._quest_yaml_path(quest_root),
+                    quest_root / ".ds" / "research_state.json",
+                    self._artifact_projection_path(quest_root),
+                ]
+            ),
+            self._git_branch_projection_state(quest_root),
+        )
+
+    def _projection_state_for_kind(self, quest_root: Path, kind: str) -> Any:
+        if kind == "details":
+            return self._details_projection_state(quest_root)
+        if kind == "canvas":
+            return self._canvas_projection_state(quest_root)
+        raise ValueError(f"Unsupported projection kind `{kind}`.")
+
+    def _projection_source_signature(self, quest_root: Path, kind: str) -> str:
+        state = {
+            "projection_id": self._projection_id(kind),
+            "state": self._json_compatible_state(self._projection_state_for_kind(quest_root, kind)),
+        }
+        return sha256_text(json.dumps(state, ensure_ascii=False, sort_keys=True))
+
+    def _default_projection_status(self, kind: str) -> dict[str, Any]:
+        return {
+            "projection_id": self._projection_id(kind),
+            "state": "missing",
+            "progress_current": 0,
+            "progress_total": 0,
+            "current_step": None,
+            "source_signature": None,
+            "generated_at": None,
+            "last_success_at": None,
+            "error": None,
+        }
+
+    def _normalize_projection_status(self, kind: str, raw: Any) -> dict[str, Any]:
+        normalized = self._default_projection_status(kind)
+        if isinstance(raw, dict):
+            normalized.update(
+                {
+                    "state": str(raw.get("state") or normalized["state"]).strip() or normalized["state"],
+                    "progress_current": max(0, int(raw.get("progress_current") or 0)),
+                    "progress_total": max(0, int(raw.get("progress_total") or 0)),
+                    "current_step": str(raw.get("current_step") or "").strip() or None,
+                    "source_signature": str(raw.get("source_signature") or "").strip() or None,
+                    "generated_at": str(raw.get("generated_at") or "").strip() or None,
+                    "last_success_at": str(raw.get("last_success_at") or "").strip() or None,
+                    "error": str(raw.get("error") or "").strip() or None,
+                }
+            )
+        return normalized
+
+    def _read_projection_manifest(self, quest_root: Path) -> dict[str, Any]:
+        manifest = self._read_cached_json(
+            self._projection_manifest_path(quest_root),
+            {
+                "schema_version": _PROJECTION_SCHEMA_VERSION,
+                "projections": {},
+            },
+        )
+        if not isinstance(manifest, dict):
+            return {
+                "schema_version": _PROJECTION_SCHEMA_VERSION,
+                "projections": {},
+            }
+        return manifest
+
+    def _read_projection_payload_file(self, quest_root: Path, kind: str) -> dict[str, Any] | None:
+        payload = self._read_cached_json(self._projection_payload_path(quest_root, kind), {})
+        if not isinstance(payload, dict):
+            return None
+        if str(payload.get("projection_id") or "").strip() != self._projection_id(kind):
+            return None
+        if not isinstance(payload.get("payload"), dict):
+            return None
+        return payload
+
+    def _write_projection_manifest_locked(
+        self,
+        quest_root: Path,
+        kind: str,
+        status: dict[str, Any],
+    ) -> dict[str, Any]:
+        path = self._projection_manifest_path(quest_root)
+        ensure_dir(path.parent)
+        manifest = read_json(path, {})
+        if not isinstance(manifest, dict):
+            manifest = {}
+        projections = manifest.get("projections") if isinstance(manifest.get("projections"), dict) else {}
+        next_status = self._normalize_projection_status(kind, status)
+        projections = {
+            **projections,
+            kind: next_status,
+        }
+        write_json(
+            path,
+            {
+                "schema_version": _PROJECTION_SCHEMA_VERSION,
+                "updated_at": utc_now(),
+                "projections": projections,
+            },
+        )
+        return next_status
+
+    def _write_projection_payload_locked(
+        self,
+        quest_root: Path,
+        kind: str,
+        *,
+        source_signature: str,
+        payload: dict[str, Any],
+        generated_at: str | None = None,
+    ) -> dict[str, Any]:
+        path = self._projection_payload_path(quest_root, kind)
+        ensure_dir(path.parent)
+        resolved_generated_at = generated_at or utc_now()
+        wrapper = {
+            "schema_version": _PROJECTION_SCHEMA_VERSION,
+            "projection_id": self._projection_id(kind),
+            "generated_at": resolved_generated_at,
+            "source_signature": source_signature,
+            "payload": copy.deepcopy(payload),
+        }
+        write_json(path, wrapper)
+        return copy.deepcopy(payload)
+
+    @contextmanager
+    def _projection_lock(self, quest_root: Path, kind: str):
+        lock_key = self._projection_build_key(quest_root, kind)
+        with self._quest_projection_locks_lock:
+            thread_lock = self._quest_projection_locks.setdefault(lock_key, threading.Lock())
+        with thread_lock:
+            with advisory_file_lock(self._projection_lock_path(quest_root, kind)):
+                yield
+
+    def _projection_build_active(self, quest_root: Path, kind: str) -> bool:
+        build_key = self._projection_build_key(quest_root, kind)
+        with self._quest_projection_builds_lock:
+            thread = self._quest_projection_builds.get(build_key)
+            if thread is not None and not thread.is_alive():
+                self._quest_projection_builds.pop(build_key, None)
+                thread = None
+            return thread is not None
+
+    def _present_projection_status(
+        self,
+        quest_root: Path,
+        kind: str,
+        *,
+        source_signature: str,
+        payload_wrapper: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        manifest = self._read_projection_manifest(quest_root)
+        projections = manifest.get("projections") if isinstance(manifest.get("projections"), dict) else {}
+        status = self._normalize_projection_status(kind, projections.get(kind))
+        payload_signature = (
+            str(payload_wrapper.get("source_signature") or "").strip()
+            if isinstance(payload_wrapper, dict)
+            else None
+        ) or None
+        payload_generated_at = (
+            str(payload_wrapper.get("generated_at") or "").strip()
+            if isinstance(payload_wrapper, dict)
+            else None
+        ) or None
+        payload_ready = (
+            isinstance(payload_wrapper, dict)
+            and isinstance(payload_wrapper.get("payload"), dict)
+            and payload_signature == source_signature
+        )
+        if payload_ready:
+            status.update(
+                {
+                    "state": "ready",
+                    "source_signature": source_signature,
+                    "generated_at": payload_generated_at,
+                    "last_success_at": payload_generated_at or status.get("last_success_at"),
+                    "progress_current": _PROJECTION_BUILD_TOTAL_STEPS,
+                    "progress_total": _PROJECTION_BUILD_TOTAL_STEPS,
+                    "current_step": None,
+                    "error": None,
+                }
+            )
+            return status
+        if self._projection_build_active(quest_root, kind):
+            status["state"] = "building" if status.get("state") != "queued" else "queued"
+            status["progress_total"] = max(int(status.get("progress_total") or 0), _PROJECTION_BUILD_TOTAL_STEPS)
+            status["current_step"] = status.get("current_step") or "Building projection"
+            return status
+        if isinstance(payload_wrapper, dict) and isinstance(payload_wrapper.get("payload"), dict):
+            status.update(
+                {
+                    "state": "stale",
+                    "generated_at": payload_generated_at,
+                    "last_success_at": payload_generated_at or status.get("last_success_at"),
+                    "progress_current": 0,
+                    "progress_total": _PROJECTION_BUILD_TOTAL_STEPS,
+                    "current_step": "Queued for refresh",
+                }
+            )
+            return status
+        if status.get("state") == "failed":
+            status["progress_total"] = max(int(status.get("progress_total") or 0), _PROJECTION_BUILD_TOTAL_STEPS)
+            return status
+        return self._default_projection_status(kind)
+
+    def _queue_projection_build(self, quest_root: Path, kind: str, *, source_signature: str) -> None:
+        if self._projection_build_active(quest_root, kind):
+            return
+
+        with self._projection_lock(quest_root, kind):
+            payload_wrapper = self._read_projection_payload_file(quest_root, kind)
+            if (
+                isinstance(payload_wrapper, dict)
+                and str(payload_wrapper.get("source_signature") or "").strip() == source_signature
+                and isinstance(payload_wrapper.get("payload"), dict)
+            ):
+                ready_status = self._default_projection_status(kind)
+                ready_status.update(
+                    {
+                        "state": "ready",
+                        "source_signature": source_signature,
+                        "generated_at": str(payload_wrapper.get("generated_at") or "").strip() or None,
+                        "last_success_at": str(payload_wrapper.get("generated_at") or "").strip() or None,
+                        "progress_current": _PROJECTION_BUILD_TOTAL_STEPS,
+                        "progress_total": _PROJECTION_BUILD_TOTAL_STEPS,
+                    }
+                )
+                self._write_projection_manifest_locked(quest_root, kind, ready_status)
+                return
+            queued_status = self._default_projection_status(kind)
+            queued_status.update(
+                {
+                    "state": "queued",
+                    "source_signature": source_signature,
+                    "progress_current": 0,
+                    "progress_total": _PROJECTION_BUILD_TOTAL_STEPS,
+                    "current_step": "Queued for background rebuild",
+                    "error": None,
+                }
+            )
+            self._write_projection_manifest_locked(quest_root, kind, queued_status)
+
+        build_key = self._projection_build_key(quest_root, kind)
+
+        def _update_progress(current: int, step: str | None) -> None:
+            with self._projection_lock(quest_root, kind):
+                manifest = self._read_projection_manifest(quest_root)
+                projections = manifest.get("projections") if isinstance(manifest.get("projections"), dict) else {}
+                status = self._normalize_projection_status(kind, projections.get(kind))
+                status.update(
+                    {
+                        "state": "building",
+                        "source_signature": source_signature,
+                        "progress_current": max(0, min(current, _PROJECTION_BUILD_TOTAL_STEPS)),
+                        "progress_total": _PROJECTION_BUILD_TOTAL_STEPS,
+                        "current_step": step,
+                        "error": None,
+                    }
+                )
+                self._write_projection_manifest_locked(quest_root, kind, status)
+
+        def _worker() -> None:
+            try:
+                _update_progress(0, "Preparing projection inputs")
+                payload = self._build_projection_payload(
+                    quest_root,
+                    kind,
+                    source_signature=source_signature,
+                    update_progress=_update_progress,
+                )
+                _update_progress(_PROJECTION_BUILD_TOTAL_STEPS, "Writing projection")
+                generated_at = utc_now()
+                with self._projection_lock(quest_root, kind):
+                    self._write_projection_payload_locked(
+                        quest_root,
+                        kind,
+                        source_signature=source_signature,
+                        payload=payload,
+                        generated_at=generated_at,
+                    )
+                    ready_status = self._default_projection_status(kind)
+                    ready_status.update(
+                        {
+                            "state": "ready",
+                            "source_signature": source_signature,
+                            "generated_at": generated_at,
+                            "last_success_at": generated_at,
+                            "progress_current": _PROJECTION_BUILD_TOTAL_STEPS,
+                            "progress_total": _PROJECTION_BUILD_TOTAL_STEPS,
+                            "current_step": None,
+                            "error": None,
+                        }
+                    )
+                    self._write_projection_manifest_locked(quest_root, kind, ready_status)
+            except Exception as exc:
+                with self._projection_lock(quest_root, kind):
+                    failed_status = self._default_projection_status(kind)
+                    failed_status.update(
+                        {
+                            "state": "failed",
+                            "source_signature": source_signature,
+                            "progress_current": 0,
+                            "progress_total": _PROJECTION_BUILD_TOTAL_STEPS,
+                            "current_step": None,
+                            "error": str(exc),
+                        }
+                    )
+                    self._write_projection_manifest_locked(quest_root, kind, failed_status)
+            finally:
+                with self._quest_projection_builds_lock:
+                    active = self._quest_projection_builds.get(build_key)
+                    if active is threading.current_thread():
+                        self._quest_projection_builds.pop(build_key, None)
+
+        worker = threading.Thread(
+            target=_worker,
+            daemon=True,
+            name=f"ds-projection-{quest_root.name}-{kind}",
+        )
+        with self._quest_projection_builds_lock:
+            self._quest_projection_builds[build_key] = worker
+        worker.start()
+
+    def _recent_codex_runs(self, quest_root: Path, *, limit: int = 5) -> list[dict[str, Any]]:
+        history_root = quest_root / ".ds" / "codex_history"
+        if not history_root.exists():
+            return []
+        runs: list[dict[str, Any]] = []
+        for meta_path in sorted(history_root.glob("*/meta.json")):
+            payload = self._read_cached_json(meta_path, {})
+            if not isinstance(payload, dict) or not payload:
+                continue
+            record = dict(payload)
+            record.setdefault("history_root", str(meta_path.parent))
+            runs.append(record)
+        runs.sort(
+            key=lambda item: str(
+                item.get("updated_at")
+                or item.get("completed_at")
+                or item.get("created_at")
+                or item.get("run_id")
+                or ""
+            )
+        )
+        return runs[-limit:]
+
+    def _build_workflow_payload(
+        self,
+        quest_id: str,
+        quest_root: Path,
+        workspace_root: Path,
+        *,
+        recent_runs: list[dict[str, Any]],
+        recent_artifacts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        entries: list[dict[str, Any]] = []
+        changed_files: list[dict[str, Any]] = []
+        seen_files: set[str] = set()
+
+        def add_file(path: str | None, *, source: str, document_id: str | None = None, writable: bool | None = None) -> None:
+            if not path:
+                return
+            normalized = str(path)
+            if normalized in seen_files:
+                return
+            seen_files.add(normalized)
+            resolved_document_id = document_id or self._path_to_document_id(
+                normalized,
+                quest_root=quest_root,
+                workspace_root=workspace_root,
+            )
+            changed_files.append(
+                {
+                    "path": normalized,
+                    "source": source,
+                    "document_id": resolved_document_id,
+                    "writable": writable,
+                }
+            )
+
+        for relative in ("brief.md", "plan.md", "status.md", "SUMMARY.md"):
+            add_file(
+                str(workspace_root / relative),
+                source="document",
+                document_id=relative,
+                writable=True,
+            )
+
+        for run in recent_runs:
+            run_id = str(run.get("run_id") or "run")
+            entries.append(
+                {
+                    "id": f"run:{run_id}",
+                    "kind": "run",
+                    "run_id": run_id,
+                    "skill_id": run.get("skill_id"),
+                    "title": run_id,
+                    "summary": run.get("summary") or "Run completed.",
+                    "status": "completed" if run.get("exit_code", 0) == 0 else "failed",
+                    "created_at": run.get("completed_at") or run.get("created_at") or run.get("updated_at"),
+                    "paths": [item for item in [run.get("history_root"), run.get("run_root"), run.get("output_path")] if item],
+                }
+            )
+            for path in (run.get("history_root"), run.get("run_root"), run.get("output_path")):
+                add_file(path, source="run")
+            history_root = run.get("history_root")
+            if history_root:
+                entries.extend(
+                    self._parse_codex_history_cached(
+                        Path(str(history_root)),
+                        quest_id=quest_id,
+                        run_id=run_id,
+                        skill_id=run.get("skill_id"),
+                    )
+                )
+
+        for artifact in recent_artifacts:
+            payload = artifact.get("payload") if isinstance(artifact.get("payload"), dict) else {}
+            artifact_path = artifact.get("path")
+            entries.append(
+                {
+                    "id": f"artifact:{payload.get('artifact_id') or artifact_path}",
+                    "kind": "artifact",
+                    "title": str(payload.get("artifact_id") or artifact.get("kind") or "artifact"),
+                    "summary": payload.get("summary") or payload.get("message") or payload.get("reason") or "Artifact updated.",
+                    "status": payload.get("status"),
+                    "reason": payload.get("reason"),
+                    "created_at": payload.get("updated_at") or payload.get("created_at"),
+                    "paths": list((payload.get("paths") or {}).values()) + ([str(artifact_path)] if artifact_path else []),
+                }
+            )
+            add_file(str(artifact_path) if artifact_path else None, source="artifact")
+            for path in (payload.get("paths") or {}).values():
+                add_file(str(path), source="artifact_path")
+
+        entries.sort(key=lambda item: str(item.get("created_at") or item.get("id") or ""))
+        return {
+            "quest_id": quest_id,
+            "quest_root": str(quest_root.resolve()),
+            "entries": entries[-80:],
+            "changed_files": changed_files[-30:],
+        }
+
+    def _build_details_projection_payload(
+        self,
+        quest_root: Path,
+        *,
+        source_signature: str,
+        update_progress: Any,
+    ) -> dict[str, Any]:
+        quest_id = quest_root.name
+        workspace_root = self.active_workspace_root(quest_root)
+        update_progress(1, "Loading recent workflow sources")
+        recent_artifacts = self._collect_artifacts(quest_root)[-8:]
+        recent_runs = self._recent_codex_runs(quest_root, limit=5)
+        update_progress(2, "Materializing workflow timeline")
+        return self._build_workflow_payload(
+            quest_id,
+            quest_root,
+            workspace_root,
+            recent_runs=recent_runs,
+            recent_artifacts=recent_artifacts,
+        )
+
+    def _build_canvas_projection_payload(
+        self,
+        quest_root: Path,
+        *,
+        source_signature: str,
+        update_progress: Any,
+    ) -> dict[str, Any]:
+        update_progress(1, "Scanning branch references")
+        update_progress(2, "Computing branch canvas")
+        return list_branch_canvas(quest_root, quest_id=quest_root.name)
+
+    def _build_projection_payload(
+        self,
+        quest_root: Path,
+        kind: str,
+        *,
+        source_signature: str,
+        update_progress: Any,
+    ) -> dict[str, Any]:
+        if kind == "details":
+            return self._build_details_projection_payload(
+                quest_root,
+                source_signature=source_signature,
+                update_progress=update_progress,
+            )
+        if kind == "canvas":
+            return self._build_canvas_projection_payload(
+                quest_root,
+                source_signature=source_signature,
+                update_progress=update_progress,
+            )
+        raise ValueError(f"Unsupported projection kind `{kind}`.")
+
+    def _placeholder_workflow_payload(self, quest_id: str, quest_root: Path) -> dict[str, Any]:
+        workspace_root = self.active_workspace_root(quest_root)
+        return self._build_workflow_payload(
+            quest_id,
+            quest_root,
+            workspace_root,
+            recent_runs=[],
+            recent_artifacts=[],
+        )
+
+    def _placeholder_canvas_payload(self, quest_id: str, quest_root: Path) -> dict[str, Any]:
+        research_state = self.read_research_state(quest_root)
+        default_ref = (
+            str(research_state.get("research_head_branch") or "").strip()
+            or str(research_state.get("current_workspace_branch") or "").strip()
+            or current_branch(quest_root)
+        )
+        return {
+            "quest_id": quest_id,
+            "default_ref": default_ref,
+            "current_ref": default_ref,
+            "head": head_commit(quest_root),
+            "nodes": [],
+            "edges": [],
+            "views": {
+                "ideas": [],
+                "analysis": [],
+            },
+        }
+
+    def _projected_payload(self, quest_id: str, kind: str) -> dict[str, Any]:
+        quest_root = self._quest_root(quest_id)
+        source_signature = self._projection_source_signature(quest_root, kind)
+        payload_wrapper = self._read_projection_payload_file(quest_root, kind)
+        payload_ready = (
+            isinstance(payload_wrapper, dict)
+            and str(payload_wrapper.get("source_signature") or "").strip() == source_signature
+            and isinstance(payload_wrapper.get("payload"), dict)
+        )
+        if not payload_ready:
+            self._queue_projection_build(quest_root, kind, source_signature=source_signature)
+            payload_wrapper = self._read_projection_payload_file(quest_root, kind)
+        status = self._present_projection_status(
+            quest_root,
+            kind,
+            source_signature=source_signature,
+            payload_wrapper=payload_wrapper,
+        )
+        payload = (
+            copy.deepcopy(payload_wrapper.get("payload"))
+            if isinstance(payload_wrapper, dict) and isinstance(payload_wrapper.get("payload"), dict)
+            else None
+        )
+        if payload is None:
+            payload = (
+                self._placeholder_workflow_payload(quest_id, quest_root)
+                if kind == "details"
+                else self._placeholder_canvas_payload(quest_id, quest_root)
+            )
+        payload["projection_status"] = status
+        return payload
+
+    def prime_projection(self, quest_id: str, kind: str) -> None:
+        quest_root = self._quest_root(quest_id)
+        self._queue_projection_build(
+            quest_root,
+            kind,
+            source_signature=self._projection_source_signature(quest_root, kind),
+        )
+
+    def schedule_projection_refresh(
+        self,
+        quest_root: Path,
+        *,
+        kinds: tuple[str, ...] | list[str] | None = None,
+        throttle_seconds: float = _PROJECTION_REFRESH_THROTTLE_SECONDS,
+    ) -> None:
+        resolved_kinds = [
+            str(kind).strip()
+            for kind in (kinds or ("details", "canvas"))
+            if str(kind).strip() in {"details", "canvas"}
+        ]
+        if not resolved_kinds:
+            return
+        min_interval = max(0.0, float(throttle_seconds))
+        now = time.monotonic()
+        for kind in resolved_kinds:
+            build_key = self._projection_build_key(quest_root, kind)
+            if self._projection_build_active(quest_root, kind):
+                continue
+            with self._quest_projection_refresh_lock:
+                previous = float(self._quest_projection_refresh_at.get(build_key) or 0.0)
+                if min_interval > 0 and now - previous < min_interval:
+                    continue
+                self._quest_projection_refresh_at[build_key] = now
+            try:
+                self._queue_projection_build(
+                    quest_root,
+                    kind,
+                    source_signature=self._projection_source_signature(quest_root, kind),
+                )
+            except Exception:
+                continue
+
+    def git_branch_canvas(self, quest_id: str) -> dict[str, Any]:
+        return self._projected_payload(quest_id, "canvas")
 
     def _active_baseline_attachment(self, quest_root: Path, workspace_root: Path) -> dict[str, Any] | None:
         attachments: list[dict[str, Any]] = []
@@ -3007,97 +3780,7 @@ class QuestService:
         return self._read_cached_jsonl(self._quest_root(quest_id) / ".ds" / "conversations" / "main.jsonl")[-limit:]
 
     def workflow(self, quest_id: str) -> dict:
-        quest_root = self._quest_root(quest_id)
-        workspace_root = self.active_workspace_root(quest_root)
-        snapshot = self.snapshot(quest_id)
-        entries: list[dict] = []
-        changed_files: list[dict] = []
-        seen_files: set[str] = set()
-
-        def add_file(path: str | None, *, source: str, document_id: str | None = None, writable: bool | None = None) -> None:
-            if not path:
-                return
-            normalized = str(path)
-            if normalized in seen_files:
-                return
-            seen_files.add(normalized)
-            resolved_document_id = document_id or self._path_to_document_id(
-                normalized,
-                quest_root=quest_root,
-                workspace_root=workspace_root,
-            )
-            changed_files.append(
-                {
-                    "path": normalized,
-                    "source": source,
-                    "document_id": resolved_document_id,
-                    "writable": writable,
-                }
-            )
-
-        for relative in ("brief.md", "plan.md", "status.md", "SUMMARY.md"):
-            add_file(
-                str(workspace_root / relative),
-                source="document",
-                document_id=relative,
-                writable=True,
-            )
-
-        recent_runs = snapshot.get("recent_runs") or []
-        for run in recent_runs:
-            run_id = str(run.get("run_id") or "run")
-            entries.append(
-                {
-                    "id": f"run:{run_id}",
-                    "kind": "run",
-                    "run_id": run_id,
-                    "skill_id": run.get("skill_id"),
-                    "title": run_id,
-                    "summary": run.get("summary") or "Run completed.",
-                    "status": "completed" if run.get("exit_code", 0) == 0 else "failed",
-                    "created_at": run.get("completed_at") or run.get("created_at") or run.get("updated_at"),
-                    "paths": [item for item in [run.get("history_root"), run.get("run_root"), run.get("output_path")] if item],
-                }
-            )
-            for path in (run.get("history_root"), run.get("run_root"), run.get("output_path")):
-                add_file(path, source="run")
-            history_root = run.get("history_root")
-            if history_root:
-                entries.extend(
-                    self._parse_codex_history_cached(
-                        Path(str(history_root)),
-                        quest_id=quest_id,
-                        run_id=run_id,
-                        skill_id=run.get("skill_id"),
-                    )
-                )
-
-        for artifact in snapshot.get("recent_artifacts") or []:
-            payload = artifact.get("payload") or {}
-            artifact_path = artifact.get("path")
-            entries.append(
-                {
-                    "id": f"artifact:{payload.get('artifact_id') or artifact_path}",
-                    "kind": "artifact",
-                    "title": str(payload.get("artifact_id") or artifact.get("kind") or "artifact"),
-                    "summary": payload.get("summary") or payload.get("message") or payload.get("reason") or "Artifact updated.",
-                    "status": payload.get("status"),
-                    "reason": payload.get("reason"),
-                    "created_at": payload.get("updated_at"),
-                    "paths": list((payload.get("paths") or {}).values()) + ([str(artifact_path)] if artifact_path else []),
-                }
-            )
-            add_file(str(artifact_path) if artifact_path else None, source="artifact")
-            for path in (payload.get("paths") or {}).values():
-                add_file(str(path), source="artifact_path")
-
-        entries.sort(key=lambda item: str(item.get("created_at") or item.get("id") or ""))
-        return {
-            "quest_id": quest_id,
-            "quest_root": snapshot.get("quest_root"),
-            "entries": entries[-80:],
-            "changed_files": changed_files[-30:],
-        }
+        return self._projected_payload(quest_id, "details")
 
     def events(
         self,
@@ -3224,23 +3907,53 @@ class QuestService:
     def metrics_timeline(self, quest_id: str) -> dict:
         quest_root = self._quest_root(quest_id)
         workspace_root = self.active_workspace_root(quest_root)
-        attachment = self._active_baseline_attachment(quest_root, workspace_root)
-        baseline_entry = dict(attachment.get("entry") or {}) if isinstance(attachment, dict) else None
-        selected_variant_id = (
-            str(attachment.get("source_variant_id") or "").strip() or None if isinstance(attachment, dict) else None
-        )
-        run_records = [
-            item.get("payload") or {}
-            for item in self._collect_artifacts(quest_root)
-            if str((item.get("payload") or {}).get("kind") or "") == "run"
-            and str((item.get("payload") or {}).get("run_kind") or "") == "main_experiment"
-        ]
-        return build_metrics_timeline(
-            quest_id=quest_id,
-            run_records=[item for item in run_records if isinstance(item, dict)],
-            baseline_entry=baseline_entry,
-            selected_variant_id=selected_variant_id,
-        )
+        state = self._json_compatible_state(self._metrics_timeline_state(quest_root, workspace_root))
+        cache_path = self._metrics_timeline_cache_path(quest_root)
+        cached = self._read_cached_json(cache_path, {})
+        if (
+            isinstance(cached, dict)
+            and int(cached.get("schema_version") or 0) == 1
+            and self._json_compatible_state(cached.get("state")) == state
+            and isinstance(cached.get("payload"), dict)
+        ):
+            return dict(cached.get("payload") or {})
+
+        with advisory_file_lock(self._metrics_timeline_cache_lock_path(quest_root)):
+            cached = read_json(cache_path, {})
+            if (
+                isinstance(cached, dict)
+                and int(cached.get("schema_version") or 0) == 1
+                and self._json_compatible_state(cached.get("state")) == state
+                and isinstance(cached.get("payload"), dict)
+            ):
+                return dict(cached.get("payload") or {})
+
+            attachment = self._active_baseline_attachment(quest_root, workspace_root)
+            baseline_entry = dict(attachment.get("entry") or {}) if isinstance(attachment, dict) else None
+            selected_variant_id = (
+                str(attachment.get("source_variant_id") or "").strip() or None if isinstance(attachment, dict) else None
+            )
+            run_records = [
+                item.get("payload") or {}
+                for item in self._collect_run_artifacts_raw(quest_root, run_kind="main_experiment")
+                if isinstance(item.get("payload"), dict)
+            ]
+            payload = build_metrics_timeline(
+                quest_id=quest_id,
+                run_records=run_records,
+                baseline_entry=baseline_entry,
+                selected_variant_id=selected_variant_id,
+            )
+            write_json(
+                cache_path,
+                {
+                    "schema_version": 1,
+                    "generated_at": utc_now(),
+                    "state": state,
+                    "payload": payload,
+                },
+            )
+            return payload
 
     def list_documents(self, quest_id: str) -> list[dict]:
         quest_root = self._quest_root(quest_id)
@@ -4056,6 +4769,7 @@ class QuestService:
                         quest_data.pop("active_run_id", None)
                 quest_data["updated_at"] = now
                 write_yaml(quest_root / "quest.yaml", quest_data)
+            self.schedule_projection_refresh(quest_root, kinds=("details",))
             return state
 
     @staticmethod
@@ -5192,9 +5906,11 @@ def _tool_output(event: dict, item: dict) -> str:
             item.get("result"),
             item.get("output"),
             item.get("content"),
+            item.get("error"),
             event.get("result"),
             event.get("output"),
             event.get("content"),
+            event.get("error"),
             item.get("aggregated_output"),
             event.get("aggregated_output"),
         ):
@@ -5208,11 +5924,13 @@ def _tool_output(event: dict, item: dict) -> str:
         item.get("output"),
         item.get("result"),
         item.get("content"),
+        item.get("error"),
         event.get("aggregated_output"),
         event.get("changes"),
         event.get("output"),
         event.get("result"),
         event.get("content"),
+        event.get("error"),
     ):
         text = _compact_text(value, limit=1200)
         if text:

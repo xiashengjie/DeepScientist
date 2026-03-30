@@ -38,13 +38,14 @@ const UPDATE_CHECK_TTL_MS = 12 * 60 * 60 * 1000;
 
 const optionsWithValues = new Set(['--home', '--host', '--port', '--quest-id', '--mode', '--proxy', '--codex-profile', '--codex']);
 
-function buildCodexOverrideEnv({ yolo = false, profile = null, binary = null } = {}) {
+function buildCodexOverrideEnv({ yolo = true, profile = null, binary = null } = {}) {
   const normalizedProfile = typeof profile === 'string' ? profile.trim() : '';
   const normalizedBinary = typeof binary === 'string' ? binary.trim() : '';
   const overrides = {};
   if (normalizedBinary) {
     overrides.DEEPSCIENTIST_CODEX_BINARY = normalizedBinary;
   }
+  overrides.DEEPSCIENTIST_CODEX_YOLO = yolo ? '1' : '0';
   if (!yolo) {
     if (normalizedProfile) {
       overrides.DEEPSCIENTIST_CODEX_PROFILE = normalizedProfile;
@@ -52,7 +53,6 @@ function buildCodexOverrideEnv({ yolo = false, profile = null, binary = null } =
     }
     return overrides;
   }
-  overrides.DEEPSCIENTIST_CODEX_YOLO = '1';
   if (normalizedProfile) {
     overrides.DEEPSCIENTIST_CODEX_PROFILE = normalizedProfile;
     overrides.DEEPSCIENTIST_CODEX_MODEL = 'inherit';
@@ -67,6 +67,41 @@ function readOptionValue(argv, optionName) {
     }
   }
   return null;
+}
+
+function parseBooleanFlagValue(rawValue) {
+  const normalized = String(rawValue || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (['1', 'true', 'yes', 'on', 'y'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off', 'n'].includes(normalized)) return false;
+  return null;
+}
+
+function parseYoloArg(args, index, currentValue = true) {
+  const arg = args[index];
+  if (arg === '--yolo') {
+    const parsed = parseBooleanFlagValue(args[index + 1]);
+    if (parsed === null) {
+      return { matched: true, value: true, consumed: 1 };
+    }
+    return { matched: true, value: parsed, consumed: 2 };
+  }
+  if (typeof arg === 'string' && arg.startsWith('--yolo=')) {
+    const parsed = parseBooleanFlagValue(arg.slice('--yolo='.length));
+    return { matched: true, value: parsed === null ? true : parsed, consumed: 1 };
+  }
+  return { matched: false, value: currentValue, consumed: 0 };
+}
+
+function resolveYoloFlag(args, defaultValue = true) {
+  let value = defaultValue;
+  for (let index = 0; index < args.length; index += 1) {
+    const parsed = parseYoloArg(args, index, value);
+    if (!parsed.matched) continue;
+    value = parsed.value;
+    index += Math.max(0, parsed.consumed - 1);
+  }
+  return value;
 }
 
 function printLauncherHelp() {
@@ -105,7 +140,7 @@ Launcher flags:
   --home <path>         Use a custom DeepScientist home
   --here                Create/use ./DeepScientist under the current working directory as home
   --proxy <url>         Use an outbound HTTP/WS proxy for npm and Python runtime traffic
-  --yolo                Run Codex in YOLO mode: approval_policy=never and sandbox_mode=danger-full-access
+  --yolo [true|false]   Control Codex YOLO mode. Default is true; pass false to restore on-request + workspace-write
   --codex-profile <id>  Run DeepScientist with a specific Codex profile, for example \`m27\`
   --codex <path>        Run DeepScientist with a specific Codex executable path for this launch
   --quest-id <id>       Open the TUI on one quest directly
@@ -984,7 +1019,7 @@ function parseLauncherArgs(argv) {
   let status = false;
   let daemonOnly = false;
   let skipUpdateCheck = false;
-  let yolo = false;
+  let yolo = true;
   let codexProfile = null;
   let codexBinary = null;
 
@@ -1005,17 +1040,22 @@ function parseLauncherArgs(argv) {
     else if (arg === '--open-browser') openBrowser = true;
     else if (arg === '--daemon-only') daemonOnly = true;
     else if (arg === '--skip-update-check') skipUpdateCheck = true;
-    else if (arg === '--yolo') yolo = true;
-    else if (arg === '--codex-profile' && args[index + 1]) codexProfile = args[++index];
-    else if (arg === '--codex' && args[index + 1]) codexBinary = args[++index];
-    else if (arg === '--host' && args[index + 1]) host = args[++index];
-    else if (arg === '--port' && args[index + 1]) port = Number(args[++index]);
-    else if (arg === '--home' && args[index + 1]) home = path.resolve(args[++index]);
-    else if (arg === '--proxy' && args[index + 1]) proxy = args[++index];
-    else if (arg === '--quest-id' && args[index + 1]) questId = args[++index];
-    else if (arg === '--mode' && args[index + 1]) mode = normalizeMode(args[++index]);
-    else if (arg === '--help' || arg === '-h') return { help: true };
-    else if (!arg.startsWith('--')) return null;
+    else {
+      const parsedYolo = parseYoloArg(args, index, yolo);
+      if (parsedYolo.matched) {
+        yolo = parsedYolo.value;
+        index += Math.max(0, parsedYolo.consumed - 1);
+      } else if (arg === '--codex-profile' && args[index + 1]) codexProfile = args[++index];
+      else if (arg === '--codex' && args[index + 1]) codexBinary = args[++index];
+      else if (arg === '--host' && args[index + 1]) host = args[++index];
+      else if (arg === '--port' && args[index + 1]) port = Number(args[++index]);
+      else if (arg === '--home' && args[index + 1]) home = path.resolve(args[++index]);
+      else if (arg === '--proxy' && args[index + 1]) proxy = args[++index];
+      else if (arg === '--quest-id' && args[index + 1]) questId = args[++index];
+      else if (arg === '--mode' && args[index + 1]) mode = normalizeMode(args[++index]);
+      else if (arg === '--help' || arg === '-h') return { help: true };
+      else if (!arg.startsWith('--')) return null;
+    }
   }
 
   return {
@@ -1172,6 +1212,11 @@ function parseMigrateArgs(argv) {
 function findFirstPositionalArg(args) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    const parsedYolo = parseYoloArg(args, index);
+    if (parsedYolo.matched) {
+      index += Math.max(0, parsedYolo.consumed - 1);
+      continue;
+    }
     if (optionsWithValues.has(arg)) {
       index += 1;
       continue;
@@ -2359,6 +2404,13 @@ function normalizePythonCliArgs(args, home) {
       continue;
     }
     if (arg === '--yolo') {
+      const parsed = parseBooleanFlagValue(args[index + 1]);
+      if (parsed !== null) {
+        index += 1;
+      }
+      continue;
+    }
+    if (typeof arg === 'string' && arg.startsWith('--yolo=')) {
       continue;
     }
     if (arg === '--codex-profile') {
@@ -4130,7 +4182,7 @@ async function main() {
     const pythonRuntime = ensurePythonRuntime(home);
     const runtimePython = pythonRuntime.runtimePython;
     const codexOverrideEnv = buildCodexOverrideEnv({
-      yolo: args.includes('--yolo'),
+      yolo: resolveYoloFlag(args, true),
       profile: readOptionValue(args, '--codex-profile'),
       binary: readOptionValue(args, '--codex'),
     });

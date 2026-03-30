@@ -89,6 +89,11 @@ Use the optimize references deliberately instead of opening them all at once.
   - use when a candidate brief is still under-specified
   - use before `submission_mode='candidate'` creation
 
+- `references/brief-shaping-playbook.md`
+  - use when a direction is still fuzzy and needs to be turned into a ranking-ready candidate brief
+  - use before widening the slate with more half-specified variants
+  - use to preserve the "clarify -> compare approaches -> recommend -> self-check" discipline for candidate briefs
+
 - `references/candidate-ranking-template.md`
   - use when several candidate briefs compete for promotion
   - use before promoting briefs into durable lines
@@ -251,6 +256,7 @@ Good candidate-brief fields include:
 Do not promote every candidate automatically.
 
 Use `references/method-brief-template.md` for the minimum acceptable candidate-brief structure.
+Use `references/brief-shaping-playbook.md` when the brief is still too vague, too implementation-first, or too collapsed onto one familiar mechanism.
 
 Candidate briefs should explicitly answer:
 
@@ -264,14 +270,27 @@ If the brief cannot answer those four questions clearly, it is not ready for pro
 Treat a candidate brief as the DeepScientist form of a method brief.
 It should sit between "idea intuition" and "code implementation".
 
+Preserve this brief-shaping discipline:
+
+1. clarify the bottleneck, constraints, and comparability boundary first
+2. generate a small differentiated slate, usually `2-3` serious approaches
+3. recommend one approach with explicit tradeoffs against the alternatives
+4. self-check the winning brief for ambiguity, overlap, and weak justification before submission
+
+Do not jump from "interesting intuition" to branch creation.
+Do not jump from "I know how to code this" to "this deserves promotion."
+
 When running the `brief` submode:
 
 - produce only `2-4` serious candidate briefs by default
+- ask or answer the minimum clarifying questions needed to remove ambiguity around bottleneck, constraint fit, and comparability
 - explicitly keep one incumbent-compatible refinement when possible
 - explicitly keep one orthogonal alternative when possible
 - explicitly keep one broader lens or paradigm shift candidate when possible
 - avoid generating several renamed variants of the same mechanism
 - prefer mechanism-level distinctness over volume
+- present the differentiated slate on one shared comparison surface before choosing a recommended brief
+- keep the questioning bounded and execution-oriented rather than open-ended brainstorming
 
 Use a coverage contract for every serious brief slate:
 
@@ -287,6 +306,7 @@ For each serious brief, record at least:
 - bottleneck
 - why_current_line_is_limited
 - mechanism
+- why_now
 - mechanism_family
 - change_layer: `Tier1` / `Tier2` / `Tier3`
 - source_lens
@@ -302,6 +322,7 @@ InternAgent-style behavior to preserve here:
 - critique them before promotion
 - express them as method-layer objects rather than code patches
 - defer branch creation until the candidate is actually chosen
+- prefer one-question-at-a-time clarification when one missing assumption would otherwise contaminate the whole brief slate
 
 Do not require a paper-style literature hard gate inside this submode unless the quest explicitly moved back toward paper work.
 
@@ -439,7 +460,27 @@ MLEvolve-style behavior to preserve here:
 
 - one durable line may produce multiple candidate attempts
 - candidate generation is bounded
-- smoke comes before full evaluation
+- smoke comes before full evaluation unless the task is explicitly `fast-check` and direct quick validation is cheaper and equally informative
+
+Use a validation-cost-aware seed policy:
+
+- `fast-check`: the first objective smoke signal is likely under about `20` minutes
+- `slow-check`: the first objective smoke signal is likely over about `20` minutes or expensive enough that broad probing is wasteful
+
+For `fast-check` seed work:
+
+- widen a bit more aggressively inside the line
+- a seed batch of `3-5` candidates can be justified when they are genuinely differentiated
+- prefer multiple orthogonal quick tests over one over-discussed candidate
+- a separate smoke stage is optional; direct submission into quick parallel validation is acceptable when the first check is already cheap
+- only skip smoke when the parallel quick validations are expected to produce distinguishable conclusions rather than repeated near-duplicate outcomes
+
+For `slow-check` seed work:
+
+- keep the initial seed batch tighter, usually `1-2` candidates and rarely `3`
+- insist on a stronger reason for every candidate entering smoke
+- prefer one dominant hypothesis plus one hedge candidate over a broad exploratory pool
+- do not spend long runs to discover that the brief itself was weak
 
 Do not keep a live implementation pool dominated by the same mechanism family.
 Default active-pool rule:
@@ -484,6 +525,14 @@ MLEvolve-style behavior to preserve here:
 - small live candidate pool
 - explicit move from draft -> smoke -> full eval -> archive or result
 - measured frontier review after real evidence
+
+Use a validation-cost-aware loop policy:
+
+- for `fast-check` tasks, it is acceptable to run more quick, different tests before converging
+- for `fast-check` tasks, direct quick validation may replace a separate smoke stage if that saves time without losing decision quality
+- for `slow-check` tasks, use fewer but sharper passes, and require objective gain before widening or evolving further
+- if the validation loop is slow, do not keep paying for frontier uncertainty that could have been reduced in `brief`
+- if the validation loop is fast, prefer resolving uncertainty with evidence instead of over-arguing in chat
 
 Use a branch/family diversity cap during exploitation:
 
@@ -554,7 +603,7 @@ Use `report_type='optimization_candidate'` consistently for implementation-level
 ## Execution protocol
 
 - Use `bash_exec` for smoke checks and full runs.
-- Prefer bounded smoke before full evaluation.
+- Prefer bounded smoke before full evaluation unless `fast-check` direct validation is cheaper and equally informative.
 - Do not keep rerunning the same unchanged candidate.
 - If a candidate fails with a clear root cause, either debug it deliberately or archive it.
 - If the same line stalls repeatedly, switch to exploit or fusion rather than pretending more of the same is new evidence.
@@ -563,8 +612,8 @@ Use this execution order by default:
 
 1. candidate brief selection
 2. implementation-level candidate generation
-3. smoke test
-4. promotion to full evaluation
+3. smoke test or direct quick validation
+4. promotion to fuller evaluation when justified
 5. durable result recording
 6. frontier review
 
@@ -573,6 +622,14 @@ Prefer only a small active pool at once:
 - usually `2-4` candidate briefs before promotion
 - usually `2-3` live implementation candidates in smoke
 - usually `1-2` full evaluations running at once unless the environment clearly supports more
+
+Validation-cost-aware override:
+
+- if first-pass validation is under about `20` minutes, it is reasonable to increase smoke breadth modestly and compare more alternatives early
+- if first-pass validation is under about `20` minutes, you may skip a separate smoke stage and submit several quick validations in parallel
+- only do that when the validations are likely to yield different conclusions such as clear win / tie / fail / instability, rather than redundant repeats
+- if first-pass validation is slower than that, keep the active pool narrow and gate evolution on clear objective signal
+- for slow validation, do not promote a candidate into heavier resource investment until smoke or pilot evidence shows a real performance improvement, stability improvement, or comparability-preserving advantage
 
 ## Code-generation route selection
 

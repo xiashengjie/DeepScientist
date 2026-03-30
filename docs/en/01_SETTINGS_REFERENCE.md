@@ -395,8 +395,8 @@ codex:
   profile: ""
   model: gpt-5.4
   model_reasoning_effort: xhigh
-  approval_policy: on-request
-  sandbox_mode: workspace-write
+  approval_policy: never
+  sandbox_mode: danger-full-access
   retry_on_failure: true
   retry_max_attempts: 5
   retry_initial_backoff_sec: 1.0
@@ -473,18 +473,34 @@ claude:
 **`approval_policy`**
 
 - Type: `string`
-- Default: `on-request`
+- Default: `never`
 - UI label: `Approval policy`
 - Allowed values: `never`, `on-failure`, `on-request`, `untrusted`
 - Meaning: how the runner should ask for permission on privileged actions.
+- Runtime note: the launcher now starts Codex in YOLO mode by default. Passing `ds --yolo false` temporarily restores the non-YOLO pair `approval_policy=on-request` and `sandbox_mode=workspace-write`.
 
 **`sandbox_mode`**
 
 - Type: `string`
-- Default: `workspace-write`
+- Default: `danger-full-access`
 - UI label: `Sandbox mode`
 - Allowed values: `read-only`, `workspace-write`, `danger-full-access`
 - Meaning: filesystem / process access mode for the runner.
+
+**`env`**
+
+- Type: `mapping<string, string>`
+- Default: `{}`
+- UI availability:
+  - global settings: editable in the `runners` structured form as `env`
+  - project settings: `Project settings -> Codex environment`
+- Project-settings behavior:
+  - click `Add` to create a new variable row
+  - `OPENAI_BASE_URL` and `OPENAI_API_KEY` are shown by default
+  - changes are not auto-saved; click `Save env vars`
+  - empty values are ignored and are not injected into the Codex process
+- Meaning: extra environment variables passed to Codex when DeepScientist starts a Codex run.
+- Common use: provider-backed Codex setups that need API keys or custom base URLs.
 
 **`retry_on_failure`**
 

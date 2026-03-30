@@ -17,6 +17,18 @@ def _as_bool_env(name: str) -> bool:
     return value.lower() in {"1", "true", "yes", "on", "y"}
 
 
+def _as_optional_bool_env(name: str) -> bool | None:
+    value = _as_text(os.environ.get(name))
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized in {"1", "true", "yes", "on", "y"}:
+        return True
+    if normalized in {"0", "false", "no", "off", "n"}:
+        return False
+    return True
+
+
 def codex_runtime_overrides() -> dict[str, str]:
     binary = _as_text(os.environ.get("DEEPSCIENTIST_CODEX_BINARY") or os.environ.get("DS_CODEX_BINARY"))
     approval_policy = _as_text(os.environ.get("DEEPSCIENTIST_CODEX_APPROVAL_POLICY"))
@@ -24,9 +36,13 @@ def codex_runtime_overrides() -> dict[str, str]:
     profile = _as_text(os.environ.get("DEEPSCIENTIST_CODEX_PROFILE"))
     model = _as_text(os.environ.get("DEEPSCIENTIST_CODEX_MODEL"))
 
-    if _as_bool_env("DEEPSCIENTIST_CODEX_YOLO"):
+    yolo_enabled = _as_optional_bool_env("DEEPSCIENTIST_CODEX_YOLO")
+    if yolo_enabled is True:
         approval_policy = approval_policy or "never"
         sandbox_mode = sandbox_mode or "danger-full-access"
+    elif yolo_enabled is False:
+        approval_policy = approval_policy or "on-request"
+        sandbox_mode = sandbox_mode or "workspace-write"
 
     overrides: dict[str, str] = {}
     if binary:

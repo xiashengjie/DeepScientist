@@ -106,13 +106,18 @@ def test_memory_mcp_server_tools_cover_core_flows(temp_home: Path) -> None:
         )
         server = build_memory_server(context)
 
-        assert [tool.name for tool in await server.list_tools()] == [
+        tools = await server.list_tools()
+        assert [tool.name for tool in tools] == [
             "write",
             "read",
             "search",
             "list_recent",
             "promote_to_global",
         ]
+        tool_map = {tool.name: tool for tool in tools}
+        assert tool_map["read"].annotations.readOnlyHint is True
+        assert tool_map["search"].annotations.readOnlyHint is True
+        assert tool_map["list_recent"].annotations.readOnlyHint is True
 
         write_result = _unwrap_tool_result(
             await server.call_tool(
@@ -281,7 +286,8 @@ def test_artifact_mcp_server_tools_cover_core_flows(temp_home: Path) -> None:
         )
         server = build_artifact_server(context)
 
-        assert [tool.name for tool in await server.list_tools()] == [
+        tools = await server.list_tools()
+        assert [tool.name for tool in tools] == [
             "record",
             "checkpoint",
             "prepare_branch",
@@ -292,6 +298,7 @@ def test_artifact_mcp_server_tools_cover_core_flows(temp_home: Path) -> None:
             "get_paper_contract_health",
             "get_quest_state",
             "get_global_status",
+            "get_method_scoreboard",
             "get_optimization_frontier",
             "read_quest_documents",
             "get_conversation_context",
@@ -312,6 +319,10 @@ def test_artifact_mcp_server_tools_cover_core_flows(temp_home: Path) -> None:
             "interact",
             "complete_quest",
         ]
+        tool_map = {tool.name: tool for tool in tools}
+        assert tool_map["get_quest_state"].annotations.readOnlyHint is True
+        assert tool_map["read_quest_documents"].annotations.readOnlyHint is True
+        assert tool_map["get_conversation_context"].annotations.readOnlyHint is True
 
         record_result = _unwrap_tool_result(
             await server.call_tool(

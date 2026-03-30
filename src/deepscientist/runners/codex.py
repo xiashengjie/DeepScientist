@@ -24,6 +24,50 @@ _TOOL_EVENT_ARGS_TEXT_LIMIT = 8_000
 _TOOL_EVENT_OUTPUT_TEXT_LIMIT = 16_000
 _MAX_QUEST_EVENT_JSON_BYTES = 2_000_000
 _OVERSIZED_EVENT_PREVIEW_TEXT_LIMIT = 12_000
+_BUILTIN_MCP_TOOL_APPROVALS: dict[str, tuple[str, ...]] = {
+    "memory": (
+        "write",
+        "read",
+        "search",
+        "list_recent",
+        "promote_to_global",
+    ),
+    "artifact": (
+        "record",
+        "checkpoint",
+        "prepare_branch",
+        "activate_branch",
+        "submit_idea",
+        "list_research_branches",
+        "resolve_runtime_refs",
+        "get_paper_contract_health",
+        "get_quest_state",
+        "get_global_status",
+        "get_method_scoreboard",
+        "get_optimization_frontier",
+        "read_quest_documents",
+        "get_conversation_context",
+        "get_analysis_campaign",
+        "record_main_experiment",
+        "create_analysis_campaign",
+        "submit_paper_outline",
+        "list_paper_outlines",
+        "submit_paper_bundle",
+        "record_analysis_slice",
+        "publish_baseline",
+        "attach_baseline",
+        "confirm_baseline",
+        "waive_baseline",
+        "arxiv",
+        "refresh_summary",
+        "render_git_graph",
+        "interact",
+        "complete_quest",
+    ),
+    "bash_exec": (
+        "bash_exec",
+    ),
+}
 
 
 def _compact_text(value: object, *, limit: int = 1200) -> str:
@@ -322,9 +366,11 @@ def _tool_output(event: dict[str, Any], item: dict[str, Any]) -> str:
             item.get("result"),
             item.get("output"),
             item.get("content"),
+            item.get("error"),
             event.get("result"),
             event.get("output"),
             event.get("content"),
+            event.get("error"),
             item.get("aggregated_output"),
             event.get("aggregated_output"),
         ):
@@ -338,11 +384,13 @@ def _tool_output(event: dict[str, Any], item: dict[str, Any]) -> str:
         item.get("output"),
         item.get("result"),
         item.get("content"),
+        item.get("error"),
         event.get("aggregated_output"),
         event.get("changes"),
         event.get("output"),
         event.get("result"),
         event.get("content"),
+        event.get("error"),
     ):
         text = _compact_text(value, limit=1200)
         if text:
@@ -676,7 +724,10 @@ class CodexRunner:
             env_key = str(key or "").strip()
             if not env_key or value is None:
                 continue
-            env[env_key] = str(value)
+            env_value = str(value)
+            if env_value == "":
+                continue
+            env[env_key] = env_value
         env["CODEX_HOME"] = str(codex_home)
         env["DEEPSCIENTIST_HOME"] = str(self.home)
         env["DS_HOME"] = str(self.home)
@@ -746,6 +797,13 @@ class CodexRunner:
                 timestamp = utc_now()
                 append_jsonl(history_events, {"timestamp": timestamp, "event": payload})
                 append_jsonl(stdout_events, {"timestamp": timestamp, "line": line})
+                try:
+                    self.artifact_service.quest_service.schedule_projection_refresh(
+                        request.quest_root,
+                        kinds=("details",),
+                    )
+                except Exception:
+                    pass
                 tool_event = _tool_event(
                     payload,
                     quest_id=request.quest_id,
@@ -816,6 +874,14 @@ class CodexRunner:
             }
             write_json(run_root / "result.json", result_payload)
             write_json(history_root / "meta.json", result_payload)
+            try:
+                self.artifact_service.quest_service.schedule_projection_refresh(
+                    request.quest_root,
+                    kinds=("details",),
+                    throttle_seconds=0.0,
+                )
+            except Exception:
+                pass
             self.logger.log(
                 "info",
                 "runner.codex.completed",
@@ -828,6 +894,7 @@ class CodexRunner:
                 request.quest_root,
                 {
                     "kind": "run",
+                    "status": "completed" if exit_code == 0 else "failed",
                     "run_id": request.run_id,
                     "run_kind": request.skill_id,
                     "model": request.model,
@@ -1050,6 +1117,7 @@ class CodexRunner:
         args = ["-m", "deepscientist.mcp.server", "--namespace", name]
         lines = [
             f"[mcp_servers.{name}]",
+            'transport = "stdio"',
             f'command = "{sys.executable}"',
             f"args = [{', '.join(json.dumps(item) for item in args)}]",
         ]
@@ -1064,6 +1132,14 @@ class CodexRunner:
         )
         for key, value in env.items():
             lines.append(f"{key} = {json.dumps(value)}")
+        for tool_name in _BUILTIN_MCP_TOOL_APPROVALS.get(name, ()):
+            lines.extend(
+                [
+                    "",
+                    f"[mcp_servers.{name}.tools.{tool_name}]",
+                    'approval_mode = "approve"',
+                ]
+            )
         return "\n".join(lines)
 
     def _load_runner_config(self) -> dict[str, Any]:

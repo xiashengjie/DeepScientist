@@ -9,6 +9,7 @@ Use this skill to turn the current baseline and problem frame into concrete, lit
 
 When `startup_contract.need_research_paper = false` and the quest already has a concrete optimization handle, `idea` may stop after selecting or seeding a direction and then hand off into `optimize` instead of insisting on the full paper-oriented ideation loop.
 In that algorithm-first case, `idea` should usually produce a small method-brief frontier and then defer candidate ranking, promotion, and bounded search to `optimize`.
+When doing that handoff, prefer the brief-shaping discipline later used by `optimize`: clarify the bottleneck and constraints, keep only a small differentiated `2-3` option slate, and hand off a recommended brief rather than a pile of loose intuitions.
 
 ## Interaction discipline
 
@@ -122,6 +123,7 @@ Break ties primarily through careful reasoning over:
   - when `startup_contract.need_research_paper = false` and a concrete optimization handle already exists, you may stop after a memory sweep plus a small targeted paper check instead of satisfying the full `5-10` paper floor
   - use that exception only when the immediate goal is method-brief selection for `optimize`, not paper-level novelty claims
   - if you use the exception, say explicitly that the output is an optimization brief frontier rather than a paper-ready idea package
+  - still shape that frontier deliberately: clarify the bottleneck and comparability boundary first, keep a differentiated `2-3` candidate slate, and explain why one brief is recommended now
 - Every fresh idea build or idea-refinement pass must begin with:
   - a memory sweep, and
   - an external literature sweep.
@@ -149,6 +151,8 @@ Break ties primarily through careful reasoning over:
 - Unless strong durable evidence already narrows the route to one obvious serious option, run one bounded divergent pass that produces a small but meaningfully varied slate, usually `6-12` raw ideas before collapsing to a serious frontier that is usually `2-3` and at most `5`.
 - If all surviving candidates belong to the same mechanism family, widen once with at least two new ideation lenses before converging.
 - Keep structurally coherent rejected ideas in a parking-lot or rejected-candidate section so they can be recombined later if needed.
+- In algorithm-first work, `idea` should usually produce direction families, not a large within-family variant swarm.
+- Treat within-family micro-variants as `optimize` brief work unless the mechanism family itself is still unresolved.
 - Every serious candidate must answer `why now?` or `what changed?`, not just `what is the mechanism?`
 - Every selected idea must survive a two-sentence pitch and strongest-objection check before promotion.
 - Do not promote a direction unless you can explain:
@@ -202,6 +206,51 @@ In practice:
 - use `idea` to convert that landscape into limitations, candidate directions, and a selected idea
 
 Do not skip the `scout` pass just because the quest is already in the `idea` stage.
+
+## Direction-shaping protocol
+
+Use `references/idea-thinking-flow.md` when the main need is better reasoning hygiene.
+Use `references/idea-generation-playbook.md` when the main need is to create a new idea slate and select one clear next research object.
+
+Default creation flow for a fresh idea pass:
+
+1. frame one concrete limitation
+2. separate symptom / mechanism hypothesis / consequence
+3. keep one main hypothesis plus `2-3` competing hypotheses
+4. name the primary lever bucket
+5. generate a bounded candidate slate from that framing
+6. record selected / deferred / rejected outcomes explicitly
+
+Set the frontier width with a validation-cost estimate before widening:
+
+- `fast-check`: the first objective validation loop is likely under about `20` minutes
+- `slow-check`: the first objective validation loop is likely over about `20` minutes or otherwise expensive in compute, queue time, or human delay
+
+For `fast-check` idea work:
+
+- allow a slightly wider serious slate when the candidates are meaningfully different
+- prefer candidates with cheap, orthogonal falsification paths
+- keep more alternatives alive into `optimize` because validation is cheaper than overthinking
+
+For `slow-check` idea work:
+
+- keep the serious slate tighter, usually `1-3`
+- demand a clearer bottleneck story and stronger evidence before adding another family
+- prefer the route with the best expected evidence-per-run, not the route with the most speculative upside
+- do not hand off a broad speculative slate just because it sounds interesting
+
+Do not start by shopping for modules to add.
+Do not let one attractive mechanism become the de facto framing before the limitation is pinned down.
+Do not let direction-family ideation collapse into within-family variant generation too early.
+
+In normal idea work, stop at the direction-family level:
+
+- select which mechanism families deserve serious consideration
+- identify the strongest one to carry forward
+- hand off within-family brief shaping to `optimize` when the quest is algorithm-first
+
+If the task still requires choosing among mechanism families, stay in `idea`.
+If the family is already chosen and the next need is branchless method-brief shaping, hand off to `optimize`.
 
 ## Truth sources
 
@@ -1138,6 +1187,14 @@ When writing paper memory cards, include enough metadata to avoid redundant sear
 - whether it is `new_this_pass`, `known_before`, or `watchlist`
 
 At the end of ideation, at least one part of the literature survey must be preserved in memory so a later idea pass can retrieve it directly instead of rebuilding the search from scratch.
+
+Every serious idea pass should also leave a durable outcome split:
+
+- one selected idea or selected direction family
+- any deferred but still plausible alternatives
+- any rejected alternatives with a one-line rejection reason
+
+Do not leave the rejected and deferred reasoning only in chat.
 
 Promote to global memory only when the lesson is reusable outside this quest.
 

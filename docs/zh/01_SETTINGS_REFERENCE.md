@@ -409,8 +409,8 @@ codex:
   profile: ""
   model: gpt-5.4
   model_reasoning_effort: xhigh
-  approval_policy: on-request
-  sandbox_mode: workspace-write
+  approval_policy: never
+  sandbox_mode: danger-full-access
   retry_on_failure: true
   retry_max_attempts: 5
   retry_initial_backoff_sec: 1.0
@@ -488,18 +488,34 @@ claude:
 **`approval_policy`**
 
 - 类型：`string`
-- 默认值：`on-request`
+- 默认值：`never`
 - 页面标签：`Approval policy`
 - 允许值：`never`、`on-failure`、`on-request`、`untrusted`
 - 作用：控制高权限动作如何申请许可。
+- 运行说明：launcher 现在默认以 YOLO 模式启动 Codex。若要临时关闭，可显式传 `ds --yolo false`，这会恢复到 `approval_policy=on-request` 与 `sandbox_mode=workspace-write`。
 
 **`sandbox_mode`**
 
 - 类型：`string`
-- 默认值：`workspace-write`
+- 默认值：`danger-full-access`
 - 页面标签：`Sandbox mode`
 - 允许值：`read-only`、`workspace-write`、`danger-full-access`
 - 作用：控制 runner 的文件系统/进程访问权限。
+
+**`env`**
+
+- 类型：`mapping<string, string>`
+- 默认值：`{}`
+- 页面入口：
+  - 全局设置：可在 `runners` 结构化表单中直接编辑 `env`
+  - 项目设置：`Project settings -> Codex environment`
+- 项目设置行为：
+  - 点击 `Add` 新增一行环境变量
+  - 默认会显示 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY`
+  - 修改后不会自动保存，需要手动点击 `Save env vars`
+  - 空值会被忽略，不会注入到 Codex 进程
+- 作用：DeepScientist 启动 Codex run 时，额外传入给 Codex 的环境变量。
+- 常见用途：需要 API Key 或自定义 Base URL 的 provider-backed Codex 配置。
 
 **`retry_on_failure`**
 

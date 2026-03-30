@@ -159,6 +159,71 @@ def test_codex_tool_event_carries_bash_id_from_id_only_monitor_call() -> None:
     assert rendered["metadata"]["timeout_seconds"] == 75
 
 
+def test_codex_tool_event_surfaces_failed_mcp_error_message() -> None:
+    event = {
+        "type": "item.completed",
+        "item_type": "mcp_tool_call",
+        "item": {
+            "type": "mcp_tool_call",
+            "id": "tool-failed",
+            "server": "artifact",
+            "tool": "get_quest_state",
+            "status": "failed",
+            "arguments": {"detail": "summary"},
+            "error": {"message": "user cancelled MCP tool call"},
+        },
+    }
+
+    rendered = _tool_event(
+        event,
+        quest_id="q-001",
+        run_id="run-001",
+        skill_id="idea",
+        known_tool_names={},
+        created_at="2026-03-21T00:00:00Z",
+    )
+
+    assert rendered is not None
+    assert rendered["type"] == "runner.tool_result"
+    assert rendered["status"] == "failed"
+    assert "user cancelled MCP tool call" in rendered["output"]
+
+
+def test_codex_runner_injects_builtin_mcp_tool_approval_overrides(temp_home) -> None:  # type: ignore[no-untyped-def]
+    source_codex_home = temp_home / "source-codex-home"
+    source_codex_home.mkdir(parents=True, exist_ok=True)
+    (source_codex_home / "config.toml").write_text('model_provider = "ananapi"\n', encoding="utf-8")
+    (source_codex_home / "auth.json").write_text("{}\n", encoding="utf-8")
+
+    quest_root = temp_home / "quest"
+    quest_root.mkdir(parents=True, exist_ok=True)
+    workspace_root = quest_root
+
+    runner = CodexRunner(
+        home=temp_home,
+        repo_root=temp_home,
+        binary="codex",
+        logger=object(),  # type: ignore[arg-type]
+        prompt_builder=object(),  # type: ignore[arg-type]
+        artifact_service=object(),  # type: ignore[arg-type]
+    )
+
+    codex_home = runner._prepare_project_codex_home(
+        workspace_root,
+        quest_root=quest_root,
+        quest_id="q-001",
+        run_id="run-001",
+        runner_config={"config_dir": str(source_codex_home)},
+    )
+
+    config_text = (codex_home / "config.toml").read_text(encoding="utf-8")
+    assert 'transport = "stdio"' in config_text
+    assert "[mcp_servers.artifact.tools.get_quest_state]" in config_text
+    assert "[mcp_servers.memory.tools.list_recent]" in config_text
+    assert "[mcp_servers.bash_exec.tools.bash_exec]" in config_text
+    assert config_text.count('approval_mode = "approve"') >= 3
+
+
 def test_codex_runner_omits_model_flag_when_request_uses_inherit(temp_home) -> None:  # type: ignore[no-untyped-def]
     runner = CodexRunner(
         home=temp_home,

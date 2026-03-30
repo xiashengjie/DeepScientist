@@ -41,6 +41,22 @@ def test_apply_codex_runtime_overrides_enables_yolo_mode(monkeypatch: pytest.Mon
     assert config["sandbox_mode"] == "danger-full-access"
 
 
+def test_apply_codex_runtime_overrides_disables_yolo_mode_when_env_is_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEEPSCIENTIST_CODEX_YOLO", "0")
+
+    config = apply_codex_runtime_overrides(
+        {
+            "approval_policy": "never",
+            "sandbox_mode": "danger-full-access",
+        }
+    )
+
+    assert config["approval_policy"] == "on-request"
+    assert config["sandbox_mode"] == "workspace-write"
+
+
 def test_apply_codex_runtime_overrides_accepts_profile_and_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DEEPSCIENTIST_CODEX_PROFILE", "m27")
     monkeypatch.setenv("DEEPSCIENTIST_CODEX_MODEL", "inherit")

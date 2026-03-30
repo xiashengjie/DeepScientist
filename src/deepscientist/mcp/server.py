@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from ..artifact import ArtifactService
 from ..artifact.metrics import MetricContractValidationError
@@ -52,6 +53,16 @@ ARTIFACT_STATE_CHANGE_WATCHDOG_NOTES = {
         "received an equivalent completion summary."
     ),
 }
+
+
+def _read_only_tool_annotations(*, title: str | None = None) -> ToolAnnotations:
+    return ToolAnnotations(
+        title=title,
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
 
 
 def _metric_validation_error_payload(exc: MetricContractValidationError) -> dict[str, Any]:
@@ -382,6 +393,7 @@ def build_memory_server(context: McpContext) -> FastMCP:
             "Read a memory card by id or path. "
             "Use after list_recent or search surfaced a specific card worth reusing now."
         ),
+        annotations=_read_only_tool_annotations(title="Read memory card"),
     )
     def read(
         card_id: str | None = None,
@@ -399,6 +411,7 @@ def build_memory_server(context: McpContext) -> FastMCP:
             "Search memory cards by metadata or body text. "
             "Use before broad literature search, retries, route decisions, or repeated debugging."
         ),
+        annotations=_read_only_tool_annotations(title="Search memory cards"),
     )
     def search(
         query: str,
@@ -418,6 +431,7 @@ def build_memory_server(context: McpContext) -> FastMCP:
             "List the most recently updated memory cards. "
             "Use to recover quest context at turn start, after resume, or after a long pause."
         ),
+        annotations=_read_only_tool_annotations(title="List recent memory cards"),
     )
     def list_recent(
         scope: str = "quest",
@@ -625,6 +639,7 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             "List research branches with branch number, active idea, foundation info, and corresponding main-experiment results. "
             "Use before creating the next idea when you need to compare possible foundations."
         ),
+        annotations=_read_only_tool_annotations(title="List research branches"),
     )
     def list_research_branches(comment: str | dict[str, Any] | None = None) -> dict[str, Any]:
         return service.list_research_branches(context.require_quest_root())
@@ -635,6 +650,7 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             "Resolve the current canonical research ids and refs. "
             "Use this before supplementary work when you need the active idea, latest main run, active campaign, outline, or reply-thread ids without guessing."
         ),
+        annotations=_read_only_tool_annotations(title="Resolve runtime refs"),
     )
     def resolve_runtime_refs(comment: str | dict[str, Any] | None = None) -> dict[str, Any]:
         return service.resolve_runtime_refs(context.require_quest_root())
@@ -645,6 +661,7 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             "Inspect whether the active paper line is actually unblocked for writing or finalize work. "
             "Use detail='summary' for a compact decision surface or detail='full' for exact blocking items."
         ),
+        annotations=_read_only_tool_annotations(title="Get paper contract health"),
     )
     def get_paper_contract_health(
         detail: str = "summary",
@@ -661,6 +678,7 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             "Read the current quest runtime state without mutating anything. "
             "Use detail='summary' for a compact operational view or detail='full' for recent artifacts, runs, and active interactions."
         ),
+        annotations=_read_only_tool_annotations(title="Get quest state"),
     )
     def get_quest_state(
         detail: str = "summary",
@@ -677,6 +695,7 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             "Read a concise quest-global status summary for direct user questions such as overall progress, paper readiness, or the latest measured result. "
             "Use detail='brief' for a compact answer surface or detail='full' for more structured context."
         ),
+        annotations=_read_only_tool_annotations(title="Get global status"),
     )
     def get_global_status(
         detail: str = "brief",
@@ -704,6 +723,7 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             "Read a compact optimization-frontier summary for algorithm-first quests. "
             "It summarizes candidate briefs, promoted lines, recent implementation candidates, stagnant branches, fusion opportunities, and the recommended next mode."
         ),
+        annotations=_read_only_tool_annotations(title="Get optimization frontier"),
     )
     def get_optimization_frontier(
         comment: str | dict[str, Any] | None = None,
@@ -718,6 +738,7 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             "Read durable quest documents such as brief, plan, status, summary, and active user requirements. "
             "Use mode='excerpt' for compact recovery or mode='full' when exact document wording matters."
         ),
+        annotations=_read_only_tool_annotations(title="Read quest documents"),
     )
     def read_quest_documents(
         names: list[str] | None = None,
@@ -738,6 +759,7 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             "Read a recent window of quest conversation history. "
             "Use this when earlier user/assistant continuity matters and the current prompt intentionally keeps only a compact turn launcher."
         ),
+        annotations=_read_only_tool_annotations(title="Get conversation context"),
     )
     def get_conversation_context(
         limit: int = 12,
@@ -756,6 +778,7 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             "Get one analysis campaign manifest with todo items, slice status, and next pending slice. "
             "Pass campaign_id='active' or omit it to recover the active campaign."
         ),
+        annotations=_read_only_tool_annotations(title="Get analysis campaign"),
     )
     def get_analysis_campaign(
         campaign_id: str | None = "active",
@@ -893,6 +916,7 @@ def build_artifact_server(context: McpContext) -> FastMCP:
             "List candidate/revised paper outlines and the selected outline reference. "
             "Use this before writing-facing analysis campaigns or when you need a valid outline_id."
         ),
+        annotations=_read_only_tool_annotations(title="List paper outlines"),
     )
     def list_paper_outlines(comment: str | dict[str, Any] | None = None) -> dict[str, Any]:
         return service.list_paper_outlines(context.require_quest_root())
