@@ -356,9 +356,20 @@ def test_codex_runner_prepares_project_home_from_runner_config_dir(temp_home) ->
     source_home.mkdir(parents=True, exist_ok=True)
     (source_home / "config.toml").write_text("[profiles.m27]\n", encoding="utf-8")
     (source_home / "auth.json").write_text('{"provider":"custom"}', encoding="utf-8")
+    (source_home / "skills" / "global-skill").mkdir(parents=True, exist_ok=True)
+    (source_home / "skills" / "global-skill" / "SKILL.md").write_text("GLOBAL\n", encoding="utf-8")
+    (source_home / "agents").mkdir(parents=True, exist_ok=True)
+    (source_home / "agents" / "global-agent.md").write_text("GLOBAL AGENT\n", encoding="utf-8")
+    (source_home / "prompts").mkdir(parents=True, exist_ok=True)
+    (source_home / "prompts" / "system.md").write_text("GLOBAL PROMPT\n", encoding="utf-8")
+    (source_home / "prompts" / "extra.md").write_text("GLOBAL EXTRA\n", encoding="utf-8")
 
     quest_root = temp_home / "quest"
     quest_root.mkdir(parents=True, exist_ok=True)
+    (quest_root / ".codex" / "skills" / "quest-skill").mkdir(parents=True, exist_ok=True)
+    (quest_root / ".codex" / "skills" / "quest-skill" / "SKILL.md").write_text("QUEST\n", encoding="utf-8")
+    (quest_root / ".codex" / "prompts").mkdir(parents=True, exist_ok=True)
+    (quest_root / ".codex" / "prompts" / "system.md").write_text("QUEST PROMPT\n", encoding="utf-8")
     workspace_root = quest_root / "workspace"
     workspace_root.mkdir(parents=True, exist_ok=True)
 
@@ -379,10 +390,16 @@ def test_codex_runner_prepares_project_home_from_runner_config_dir(temp_home) ->
         runner_config={"config_dir": str(source_home)},
     )
 
+    assert Path(target) == workspace_root / ".ds" / "codex-home"
     config_text = (Path(target) / "config.toml").read_text(encoding="utf-8")
     assert config_text.startswith("[profiles.m27]\n")
     assert "# BEGIN DEEPSCIENTIST BUILTINS" in config_text
     assert (Path(target) / "auth.json").read_text(encoding="utf-8") == '{"provider":"custom"}'
+    assert (Path(target) / "skills" / "global-skill" / "SKILL.md").read_text(encoding="utf-8") == "GLOBAL\n"
+    assert (Path(target) / "skills" / "quest-skill" / "SKILL.md").read_text(encoding="utf-8") == "QUEST\n"
+    assert (Path(target) / "agents" / "global-agent.md").read_text(encoding="utf-8") == "GLOBAL AGENT\n"
+    assert (Path(target) / "prompts" / "system.md").read_text(encoding="utf-8") == "QUEST PROMPT\n"
+    assert (Path(target) / "prompts" / "extra.md").read_text(encoding="utf-8") == "GLOBAL EXTRA\n"
 
 
 def test_codex_runner_prepares_project_home_overwrites_existing_provider_files(temp_home) -> None:  # type: ignore[no-untyped-def]
@@ -395,10 +412,12 @@ def test_codex_runner_prepares_project_home_overwrites_existing_provider_files(t
     quest_root.mkdir(parents=True, exist_ok=True)
     workspace_root = quest_root / "workspace"
     workspace_root.mkdir(parents=True, exist_ok=True)
-    target_home = workspace_root / ".codex"
+    target_home = workspace_root / ".ds" / "codex-home"
     target_home.mkdir(parents=True, exist_ok=True)
     (target_home / "config.toml").write_text("[profiles.old]\nmodel = \"old-profile\"\n", encoding="utf-8")
     (target_home / "auth.json").write_text('{"provider":"old-auth"}', encoding="utf-8")
+    (target_home / "agents").mkdir(parents=True, exist_ok=True)
+    (target_home / "agents" / "stale-agent.md").write_text("stale\n", encoding="utf-8")
 
     runner = CodexRunner(
         home=temp_home,
@@ -421,6 +440,7 @@ def test_codex_runner_prepares_project_home_overwrites_existing_provider_files(t
     assert 'model = "new-profile"' in config_text
     assert 'old-profile' not in config_text
     assert (Path(target) / "auth.json").read_text(encoding="utf-8") == '{"provider":"new-auth"}'
+    assert not (Path(target) / "agents").exists()
 
 
 def test_codex_runner_prepares_project_home_adapting_profile_only_provider_config(temp_home) -> None:  # type: ignore[no-untyped-def]

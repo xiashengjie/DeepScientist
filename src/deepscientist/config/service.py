@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 import tempfile
-from shutil import copy2
 from copy import deepcopy
 from pathlib import Path
 from urllib.error import URLError
@@ -12,6 +11,7 @@ from urllib.request import Request
 
 from ..codex_cli_compat import (
     adapt_profile_only_provider_config,
+    materialize_codex_runtime_home,
     normalize_codex_reasoning_effort,
     provider_profile_metadata_from_home,
 )
@@ -1245,10 +1245,11 @@ Use **Test** when the file exposes runtime dependencies.
 
         temp_home = tempfile.TemporaryDirectory(prefix="ds-codex-probe-")
         temp_root = Path(temp_home.name)
-        for filename in ("auth.json",):
-            source_path = expanded / filename
-            if source_path.exists():
-                copy2(source_path, temp_root / filename)
+        materialize_codex_runtime_home(
+            source_home=expanded,
+            target_home=temp_root,
+            profile=profile,
+        )
         write_text(temp_root / "config.toml", adapted_text)
         return str(temp_root), warning, temp_home
 

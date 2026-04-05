@@ -246,9 +246,10 @@ The current authoritative runner path is Codex.
 
 The Codex runner:
 
-- prepares a quest-local `.codex/`
-- copies local auth/config if needed
-- injects DeepScientist built-in MCP servers into `.codex/config.toml`
+- prepares an isolated runtime home under `.ds/codex-home/`
+- inherits the configured Codex home semantics (`config.toml`, `auth.json`, `skills/`, `agents/`, `prompts/`)
+- overlays quest-local `.codex/skills/` and `.codex/prompts/` on top of that runtime copy
+- injects DeepScientist built-in MCP servers into `.ds/codex-home/config.toml`
 - runs `codex --search exec --json --cd <quest_root> --skip-git-repo-check --model <model> -`
 
 The injected built-in MCP namespaces are exactly:

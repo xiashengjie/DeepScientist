@@ -61,7 +61,7 @@ codex:
 Important:
 
 - keep `model: inherit` for provider-backed Codex profiles unless you are certain the provider accepts the explicit model id you plan to send
-- DeepScientist will reuse the same `~/.codex/config.toml` and environment that your terminal Codex already uses
+- DeepScientist now launches Codex from an isolated runtime home under `.ds/codex-home`, but that runtime copy inherits your configured `~/.codex` auth, config, skills, agents, and prompts first
 
 ## Provider matrix
 
@@ -198,7 +198,7 @@ model_provider = "minimax"
 
 What DeepScientist supports now:
 
-- if you use this profile-only MiniMax config with Codex CLI `0.57.0`, DeepScientist automatically promotes the selected profile's `model_provider` and `model` to the top level inside its probe/runtime copy of `.codex/config.toml`
+- if you use this profile-only MiniMax config with Codex CLI `0.57.0`, DeepScientist automatically promotes the selected profile's `model_provider` and `model` to the top level inside its probe/runtime copy of `config.toml`
 - DeepScientist forces provider-backed MiniMax runs to use `model: inherit`, so it does not accidentally override the profile with a hard-coded OpenAI model
 - when `requires_openai_auth = false`, DeepScientist strips conflicting `OPENAI_API_KEY` and `OPENAI_BASE_URL` values from the probe/runtime environment
 - this means DeepScientist can start even when plain terminal `codex --profile m27` still fails on that exact profile-only shape

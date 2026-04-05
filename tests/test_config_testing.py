@@ -826,6 +826,12 @@ model_provider = "minimax"
 """,
         encoding="utf-8",
     )
+    (source_codex_home / "skills" / "global-skill").mkdir(parents=True, exist_ok=True)
+    (source_codex_home / "skills" / "global-skill" / "SKILL.md").write_text("GLOBAL\n", encoding="utf-8")
+    (source_codex_home / "agents").mkdir(parents=True, exist_ok=True)
+    (source_codex_home / "agents" / "global-agent.md").write_text("GLOBAL AGENT\n", encoding="utf-8")
+    (source_codex_home / "prompts").mkdir(parents=True, exist_ok=True)
+    (source_codex_home / "prompts" / "system.md").write_text("GLOBAL PROMPT\n", encoding="utf-8")
 
     monkeypatch.setattr("deepscientist.config.service.resolve_runner_binary", lambda binary, runner_name=None: "/tmp/fake-codex")
     captured: dict[str, object] = {}
@@ -842,6 +848,9 @@ model_provider = "minimax"
         captured["env"] = dict(kwargs.get("env") or {})
         prepared_home = Path(str(captured["env"]["CODEX_HOME"]))
         captured["prepared_config"] = (prepared_home / "config.toml").read_text(encoding="utf-8")
+        captured["prepared_skill"] = (prepared_home / "skills" / "global-skill" / "SKILL.md").read_text(encoding="utf-8")
+        captured["prepared_agent"] = (prepared_home / "agents" / "global-agent.md").read_text(encoding="utf-8")
+        captured["prepared_prompt"] = (prepared_home / "prompts" / "system.md").read_text(encoding="utf-8")
 
         class Result:
             returncode = 0
@@ -865,6 +874,9 @@ model_provider = "minimax"
     assert Path(str(captured["env"]["CODEX_HOME"])) != source_codex_home
     assert 'model_provider = "minimax"' in str(captured["prepared_config"])
     assert 'model = "MiniMax-M2.7"' in str(captured["prepared_config"])
+    assert captured["prepared_skill"] == "GLOBAL\n"
+    assert captured["prepared_agent"] == "GLOBAL AGENT\n"
+    assert captured["prepared_prompt"] == "GLOBAL PROMPT\n"
 
 
 def test_codex_probe_forces_inherit_model_for_provider_profile(monkeypatch, temp_home: Path) -> None:

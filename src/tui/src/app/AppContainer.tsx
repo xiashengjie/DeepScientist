@@ -174,16 +174,18 @@ const buildQuestConfigItems = (
       documentId: 'path::quest.yaml',
     },
   ]
-  const codexPath = `${questRoot}/.codex/config.toml`
-  if (fs.existsSync(codexPath)) {
+  const codexCandidates = [`${questRoot}/.ds/codex-home/config.toml`, `${questRoot}/.codex/config.toml`]
+  const codexPath = codexCandidates.find((candidate) => fs.existsSync(candidate))
+  if (codexPath) {
+    const relativeCodexPath = codexPath.replace(`${questRoot}/`, '')
     items.push({
-      id: `quest:${questId}:.codex/config.toml`,
+      id: `quest:${questId}:${relativeCodexPath}`,
       scope: 'quest',
-      name: '.codex/config.toml',
-      title: '.codex/config.toml',
+      name: relativeCodexPath,
+      title: relativeCodexPath,
       path: codexPath,
       writable: true,
-      documentId: 'path::.codex/config.toml',
+      documentId: `path::${relativeCodexPath}`,
     })
   }
   return items

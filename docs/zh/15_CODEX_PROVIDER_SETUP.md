@@ -62,7 +62,7 @@ codex:
 
 - 对 provider-backed 的 Codex profile，建议优先使用 `model: inherit`
 - 除非你非常确定该 provider 接受你要显式传入的模型名，否则不要再额外硬写一个模型
-- DeepScientist 会复用你终端里同一个 `~/.codex/config.toml` 与环境变量
+- DeepScientist 现在会在 `.ds/codex-home` 下启动一个隔离的运行时 home，但会先继承你配置的 `~/.codex` 里的 auth、config、skills、agents 与 prompts
 
 ## Provider 一览
 
@@ -199,7 +199,7 @@ model_provider = "minimax"
 
 DeepScientist 现在对它的支持方式是：
 
-- 如果你使用的是这类 profile-only MiniMax 配置，再配合 Codex CLI `0.57.0`，DeepScientist 会在自己的 probe / 运行时临时 `.codex/config.toml` 里，把所选 profile 的 `model_provider` 和 `model` 自动提升到顶层
+- 如果你使用的是这类 profile-only MiniMax 配置，再配合 Codex CLI `0.57.0`，DeepScientist 会在自己的 probe / 运行时临时 `config.toml` 副本里，把所选 profile 的 `model_provider` 和 `model` 自动提升到顶层
 - 对 provider-backed 的 MiniMax profile，DeepScientist 会强制使用 `model: inherit`，避免再被硬编码的 OpenAI 模型覆盖
 - 当 `requires_openai_auth = false` 时，DeepScientist 会自动移除冲突的 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL`
 - 这意味着即使终端里原样执行 `codex --profile m27` 还会失败，DeepScientist 也可以先兼容跑起来
