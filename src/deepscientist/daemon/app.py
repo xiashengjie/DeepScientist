@@ -1832,6 +1832,53 @@ class DaemonApp:
             state = self._refresh_turn_worker_state(quest_id)
         return state
 
+    def _ensure_recovery_resume_watch(self, quest_id: str, *, turn_reason: str) -> None:
+        with self._turn_lock:
+            state = self._turn_state.setdefault(quest_id, {"running": False, "pending": False})
+            if state.get("recovery_watch_active"):
+                return
+            state["recovery_watch_active"] = True
+        watcher = threading.Thread(
+            target=self._wait_and_resume_recovered_turn,
+            args=(quest_id, turn_reason),
+            daemon=True,
+            name=f"deepscientist-recovery-watch-{quest_id}",
+        )
+        watcher.start()
+
+    def _wait_and_resume_recovered_turn(self, quest_id: str, turn_reason: str) -> None:
+        try:
+            while True:
+                state = self._refresh_turn_worker_state(quest_id)
+                if not state.get("recovery_pending"):
+                    return
+                if not state.get("running"):
+                    break
+                time.sleep(0.1)
+
+            snapshot = self.quest_service.snapshot(quest_id)
+            pending_user_count = int(snapshot.get("pending_user_message_count") or 0)
+            if pending_user_count > 0:
+                self.schedule_turn(quest_id, reason=turn_reason)
+                return
+
+            with self._turn_lock:
+                state = self._turn_state.setdefault(quest_id, {"running": False, "pending": False})
+                state.pop("recovery_pending", None)
+                state["stop_requested"] = False
+        except Exception as exc:
+            self.logger.log(
+                "warning",
+                "quest.turn_state_recovery_watch_failed",
+                quest_id=quest_id,
+                reason=turn_reason,
+                error=str(exc),
+            )
+        finally:
+            with self._turn_lock:
+                state = self._turn_state.setdefault(quest_id, {"running": False, "pending": False})
+                state.pop("recovery_watch_active", None)
+
     def _stalled_running_turn_details(
         self,
         quest_id: str,
@@ -1977,6 +2024,7 @@ class DaemonApp:
             timeout_seconds=_STALLED_RUNNING_TURN_INTERRUPT_TIMEOUT_SECONDS,
         )
         if turn_state.get("running"):
+            self._ensure_recovery_resume_watch(quest_id, turn_reason="queued_user_messages")
             self.logger.log(
                 "warning",
                 "quest.turn_state_recovery_pending",

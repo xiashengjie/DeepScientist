@@ -4526,7 +4526,11 @@ def test_submit_user_message_recovers_stalled_live_turn_and_starts_new_run(
 
     deadline = time.time() + 3
     while time.time() < deadline:
-        snapshot = app.quest_service.snapshot(quest_id)
+        try:
+            snapshot = app.quest_service.snapshot(quest_id)
+        except PermissionError:
+            time.sleep(0.05)
+            continue
         if snapshot["active_run_id"] is None:
             break
         time.sleep(0.05)
@@ -4641,6 +4645,7 @@ def test_stalled_live_turn_recovery_pending_does_not_reinterrupt_or_clear_stop_r
     assert state["stop_requested"] is True
     assert state["pending"] is False
     assert state["recovery_pending"] is True
+    assert state["recovery_watch_active"] is True
 
     second_payload = app.schedule_turn(quest_id, reason="user_message")
 
@@ -4658,20 +4663,25 @@ def test_stalled_live_turn_recovery_pending_does_not_reinterrupt_or_clear_stop_r
     old_worker.join(timeout=2)
     assert old_worker.is_alive() is False
 
-    resumed = app.schedule_turn(quest_id, reason="user_message")
-    assert resumed["started"] is True
-    assert resumed["queued"] is False
-    assert runner.interrupt_calls == [quest_id]
-
     deadline = time.time() + 3
     while time.time() < deadline:
         if runner.requests:
             break
         time.sleep(0.05)
     else:
-        raise AssertionError("queued user message was not processed after the stale worker exited")
+        raise AssertionError("queued user message was not automatically processed after the stale worker exited")
 
     assert runner.requests == ["Please recover once the stale worker exits."]
+    assert runner.interrupt_calls == [quest_id]
+
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        state = dict(app._turn_state.get(quest_id) or {})
+        if not state.get("recovery_pending") and not state.get("recovery_watch_active"):
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("recovery watch state was not cleared after automatic reschedule")
 
 def test_run_quest_turn_clears_active_run_when_assistant_append_fails(
     temp_home: Path,
