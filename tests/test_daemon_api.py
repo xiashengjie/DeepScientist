@@ -4425,6 +4425,28 @@ def test_submit_user_message_reconciles_stale_active_turn_and_starts_new_run(tem
     )
 
 
+def _mark_turn_started_with_retry(
+    app: DaemonApp,
+    quest_id: str,
+    *,
+    run_id: str,
+    status: str,
+    retries: int = 20,
+    delay_seconds: float = 0.05,
+) -> None:
+    last_error: PermissionError | None = None
+    for _ in range(max(1, retries)):
+        try:
+            app.quest_service.mark_turn_started(quest_id, run_id=run_id, status=status)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(delay_seconds)
+    if last_error is not None:
+        raise last_error
+    raise AssertionError("mark_turn_started retry helper exhausted without raising a PermissionError")
+
+
 def test_submit_user_message_recovers_stalled_live_turn_and_starts_new_run(
     temp_home: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -4438,7 +4460,7 @@ def test_submit_user_message_recovers_stalled_live_turn_and_starts_new_run(
     app.quest_service.set_continuation_state(quest_root, policy="none")
 
     stale_run_id = "run-stalled-live-001"
-    app.quest_service.mark_turn_started(quest_id, run_id=stale_run_id, status="running")
+    _mark_turn_started_with_retry(app, quest_id, run_id=stale_run_id, status="running")
 
     interrupt_requested = threading.Event()
 
@@ -4559,7 +4581,7 @@ def test_stalled_live_turn_recovery_pending_does_not_reinterrupt_or_clear_stop_r
     app.quest_service.set_continuation_state(quest_root, policy="none")
 
     stale_run_id = "run-stalled-live-pending-001"
-    app.quest_service.mark_turn_started(quest_id, run_id=stale_run_id, status="running")
+    _mark_turn_started_with_retry(app, quest_id, run_id=stale_run_id, status="running")
 
     release_worker = threading.Event()
 
@@ -4682,6 +4704,135 @@ def test_stalled_live_turn_recovery_pending_does_not_reinterrupt_or_clear_stop_r
         time.sleep(0.05)
     else:
         raise AssertionError("recovery watch state was not cleared after automatic reschedule")
+
+
+@pytest.mark.parametrize(
+    ("action", "expected_status"),
+    [
+        ("pause", "paused"),
+        ("stop", "stopped"),
+    ],
+)
+def test_stalled_live_turn_recovery_pending_respects_later_control_action(
+    temp_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    action: str,
+    expected_status: str,
+) -> None:
+    ensure_home_layout(temp_home)
+    ConfigManager(temp_home).ensure_files()
+    app = DaemonApp(temp_home)
+    quest = app.quest_service.create(f"stalled recovery {action} quest")
+    quest_id = quest["quest_id"]
+    quest_root = Path(quest["quest_root"])
+    app.quest_service.set_continuation_state(quest_root, policy="none")
+
+    stale_run_id = f"run-stalled-live-{action}-001"
+    _mark_turn_started_with_retry(app, quest_id, run_id=stale_run_id, status="running")
+
+    release_worker = threading.Event()
+
+    def _old_worker() -> None:
+        while not release_worker.is_set():
+            time.sleep(0.02)
+
+    old_worker = threading.Thread(target=_old_worker, daemon=True, name=f"pytest-stalled-{action}-{quest_id}")
+    old_worker.start()
+
+    class RecoveryRunner:
+        binary = ""
+
+        def __init__(self) -> None:
+            self.interrupt_calls: list[str] = []
+            self.requests: list[str] = []
+
+        def run(self, request):
+            self.requests.append(request.message)
+            history_root = ensure_dir(request.quest_root / ".ds" / "codex_history" / request.run_id)
+            run_root = ensure_dir(request.quest_root / ".ds" / "runs" / request.run_id)
+            return RunResult(
+                ok=True,
+                run_id=request.run_id,
+                model=request.model,
+                output_text=f"Unexpected recovery: {request.message}",
+                exit_code=0,
+                history_root=history_root,
+                run_root=run_root,
+                stderr_text="",
+            )
+
+        def interrupt(self, target_quest_id: str) -> bool:
+            self.interrupt_calls.append(target_quest_id)
+            return True
+
+    runner = RecoveryRunner()
+    app.runners["codex"] = runner
+    app._turn_state[quest_id] = {
+        "running": True,
+        "pending": False,
+        "stop_requested": False,
+        "reason": "user_message",
+        "worker": old_worker,
+    }
+
+    def _fake_stalled_running_turn_details(
+        target_quest_id: str,
+        *,
+        snapshot: dict | None = None,
+        turn_state: dict[str, object] | None = None,
+        turn_reason: str,
+    ) -> dict[str, int] | None:
+        if target_quest_id != quest_id or turn_reason != "user_message":
+            return None
+        if not dict(turn_state or {}).get("running"):
+            return None
+        return {
+            "pending_user_count": int((snapshot or {}).get("pending_user_message_count") or 1),
+            "silent_seconds": _STALLED_RUNNING_TURN_INACTIVITY_SECONDS,
+        }
+
+    monkeypatch.setattr(app, "_stalled_running_turn_details", _fake_stalled_running_turn_details)
+    monkeypatch.setattr(
+        app,
+        "_wait_for_turn_worker_exit",
+        lambda target_quest_id, timeout_seconds: app._refresh_turn_worker_state(target_quest_id),
+    )
+
+    payload = app.submit_user_message(
+        quest_id,
+        text=f"Please recover unless I {action}.",
+        source="web-react",
+    )
+
+    assert payload["started"] is False
+    assert payload["queued"] is True
+    assert payload["reason"] == "stalled_turn_recovery_pending"
+
+    control_payload = app.handlers.quest_control(quest_id, {"action": action, "source": "web-react"})
+    assert control_payload["ok"] is True
+    assert control_payload["snapshot"]["status"] == expected_status
+
+    release_worker.set()
+    old_worker.join(timeout=2)
+    assert old_worker.is_alive() is False
+
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        state = dict(app._turn_state.get(quest_id) or {})
+        if not state.get("running") and not state.get("recovery_pending") and not state.get("recovery_watch_active"):
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("recovery state was not cleared after the later control action")
+
+    snapshot = app.quest_service.snapshot(quest_id)
+    assert snapshot["status"] == expected_status
+    assert snapshot["pending_user_message_count"] == 1
+
+    state = dict(app._turn_state.get(quest_id) or {})
+    assert state.get("stop_requested") is True
+    assert state.get("pending") is False
+    assert runner.requests == []
 
 def test_run_quest_turn_clears_active_run_when_assistant_append_fails(
     temp_home: Path,

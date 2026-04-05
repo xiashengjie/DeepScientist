@@ -1857,6 +1857,13 @@ class DaemonApp:
                 time.sleep(0.1)
 
             snapshot = self.quest_service.snapshot(quest_id)
+            runtime_status = str(snapshot.get("runtime_status") or snapshot.get("status") or "").strip().lower()
+            if runtime_status in {"paused", "stopped", "completed", "error"}:
+                with self._turn_lock:
+                    state = self._turn_state.setdefault(quest_id, {"running": False, "pending": False})
+                    state.pop("recovery_pending", None)
+                    state["stop_requested"] = runtime_status in {"paused", "stopped"}
+                return
             pending_user_count = int(snapshot.get("pending_user_message_count") or 0)
             if pending_user_count > 0:
                 self.schedule_turn(quest_id, reason=turn_reason)
