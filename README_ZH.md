@@ -43,7 +43,10 @@
 
 ---
 
-https://github.com/user-attachments/assets/3c7abb44-2b25-4477-a011-10a3154d6d76
+
+https://github.com/user-attachments/assets/16e3d346-7b27-41ef-bf3c-dc169aed3911
+
+
 
 ## 还在把时间花在科研体力活上吗？
 
