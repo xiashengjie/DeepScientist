@@ -55,6 +55,8 @@
 - 阿里百炼 Coding Plan：https://help.aliyun.com/zh/model-studio/coding-plan
 - 火山引擎 Ark Coding Plan：https://www.volcengine.com/docs/82379/1925115?lang=zh
 
+如果你要通过阿里百炼使用 Qwen，请只使用百炼 **Coding Plan** endpoint。普通百炼 / DashScope 平台的 Qwen API，不在当前 Codex-backed DeepScientist 支持范围内。
+
 如果你准备使用 provider-backed 的 Codex profile，而不是默认 OpenAI 登录流，请继续看：
 
 - [15 Codex Provider 配置](./15_CODEX_PROVIDER_SETUP.md)
@@ -131,7 +133,7 @@ ds doctor
 
 ### 2.2 provider-backed 的 Codex profile 路径
 
-如果你已经在 MiniMax、GLM、火山方舟、阿里百炼或其他 provider 上配置了一个命名的 Codex profile，请先在终端里确认这个 profile 本身可用：
+如果你已经在 MiniMax、GLM、火山方舟、阿里百炼 Coding Plan 或其他 provider 上配置了一个命名的 Codex profile，请先在终端里确认这个 profile 本身可用：
 
 ```bash
 codex --profile m27

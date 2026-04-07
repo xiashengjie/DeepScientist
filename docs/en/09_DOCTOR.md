@@ -109,6 +109,7 @@ Also check:
 
 - the same shell still exports the provider API key
 - the profile points at the provider's Coding Plan endpoint, not the generic API endpoint
+- if you are using Qwen through Alibaba Bailian, use the Bailian Coding Plan endpoint only; the generic Bailian or DashScope Qwen API is not supported here
 - `~/DeepScientist/config/runners.yaml` uses `model: inherit` if the provider expects the model to come from the profile itself
 
 MiniMax-specific note:

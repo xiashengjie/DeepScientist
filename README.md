@@ -317,6 +317,7 @@ If this is your first run, prefer an isolated environment, a non-root user, and 
 ### I want to connect my own models or external collaboration channels
 
 - [15 Codex Provider Setup](docs/en/15_CODEX_PROVIDER_SETUP.md)
+- [21 Local Model Backends Guide](docs/en/21_LOCAL_MODEL_BACKENDS_GUIDE.md)
 - [Weixin Connector Guide](docs/en/10_WEIXIN_CONNECTOR_GUIDE.md)
 - [QQ Connector Guide](docs/en/03_QQ_CONNECTOR_GUIDE.md)
 - [Telegram Connector Guide](docs/en/16_TELEGRAM_CONNECTOR_GUIDE.md)

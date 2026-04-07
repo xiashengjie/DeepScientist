@@ -55,6 +55,8 @@ If you are still choosing a coding plan or subscription, these are practical sta
 - Alibaba Cloud Bailian Coding Plan: https://help.aliyun.com/zh/model-studio/coding-plan
 - Volcengine Ark Coding Plan: https://www.volcengine.com/docs/82379/1925115?lang=zh
 
+If you plan to use Qwen through Alibaba Bailian, use the Bailian **Coding Plan** endpoint only. The generic Bailian or DashScope Qwen API is not supported in the Codex-backed DeepScientist path.
+
 If you plan to use a provider-backed Codex profile instead of the default OpenAI login flow, read this next:
 
 - [15 Codex Provider Setup](./15_CODEX_PROVIDER_SETUP.md)
@@ -131,7 +133,7 @@ ds doctor
 
 ### 2.2 Provider-backed Codex profile path
 
-If you already use a named Codex profile for MiniMax, GLM, Volcengine Ark, Alibaba Bailian, or another provider-backed path, verify that profile first in a terminal:
+If you already use a named Codex profile for MiniMax, GLM, Volcengine Ark, Alibaba Bailian Coding Plan, or another provider-backed path, verify that profile first in a terminal:
 
 ```bash
 codex --profile m27

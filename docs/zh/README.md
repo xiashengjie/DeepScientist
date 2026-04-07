@@ -85,7 +85,9 @@ DeepScientist 灵活且易于使用，支持：
 - [05 TUI 端到端指南](./05_TUI_GUIDE.md)
   如果你主要在服务器或终端里工作，这篇会带你从 `ds --tui` 一路走到 quest、connector 和跨端协作跑通。
 - [15 Codex Provider 配置](./15_CODEX_PROVIDER_SETUP.md)
-  如果你准备通过 MiniMax、GLM、火山方舟、阿里百炼或其他 Codex profile 来运行 DeepScientist，先看这一篇。
+  如果你准备通过 MiniMax、GLM、火山方舟、阿里百炼 Coding Plan 或其他 Codex profile 来运行 DeepScientist，先看这一篇。
+- [21 本地模型后端指南](./21_LOCAL_MODEL_BACKENDS_GUIDE.md)
+  如果你想通过 vLLM、Ollama、SGLang 等本地 OpenAI-compatible 后端运行 DeepScientist，先看这一篇。
 - [12 引导式工作流教程](./12_GUIDED_WORKFLOW_TOUR.md)
   按真实产品流程，逐步理解从首页到工作区应该怎么使用。
 - [02 Start Research 参考](./02_START_RESEARCH_GUIDE.md)
@@ -136,6 +138,8 @@ DeepScientist 灵活且易于使用，支持：
   启动诊断、排查常见运行问题，先看这篇。
 - [15 Codex Provider 配置](./15_CODEX_PROVIDER_SETUP.md)
   如果问题更像出在 Codex profile、provider endpoint、API key 或模型配置上，优先看这篇。
+- [21 本地模型后端指南](./21_LOCAL_MODEL_BACKENDS_GUIDE.md)
+  如果问题具体出在本地 OpenAI-compatible 后端以及 `/v1/responses` 支持上，优先看这篇。
 - [01 设置参考](./01_SETTINGS_REFERENCE.md)
   如果问题可能和配置、凭据或 connector 有关，再查这篇。
 

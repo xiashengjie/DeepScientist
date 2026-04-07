@@ -1273,9 +1273,48 @@ Use **Test** when the file exposes runtime dependencies.
         )
         return guidance
 
+    @staticmethod
+    def _provider_profile_probe_hints(metadata: dict[str, object]) -> list[str]:
+        base_url = str(metadata.get("base_url") or "").strip().lower()
+        model = str(metadata.get("model") or "").strip().lower()
+        provider = str(metadata.get("provider") or "").strip().lower()
+        if "dashscope.aliyuncs.com" not in base_url and "bailian" not in provider and "qwen" not in model:
+            return []
+        if "coding.dashscope.aliyuncs.com" not in base_url:
+            return [
+                "Alibaba Bailian's generic DashScope / Qwen platform API is not supported by the Codex-backed DeepScientist path.",
+                "If you want to use Qwen here, switch the profile to the Bailian Coding Plan endpoint: `https://coding.dashscope.aliyuncs.com/v1`.",
+            ]
+        return [
+            "For Qwen on Alibaba Bailian, only the Coding Plan endpoint is supported here; do not switch back to the generic Bailian / DashScope Qwen API.",
+        ]
+
+    @staticmethod
+    def _local_provider_probe_hints(metadata: dict[str, object]) -> list[str]:
+        base_url = str(metadata.get("base_url") or "").strip()
+        wire_api = str(metadata.get("wire_api") or "").strip().lower()
+        requires_openai_auth = metadata.get("requires_openai_auth")
+        if not base_url or requires_openai_auth is not False:
+            return []
+        hints = [
+            f"Verify the local provider directly: `curl {base_url}/models`.",
+            f"Then verify the Responses API explicitly: `curl {base_url}/responses ...`.",
+            "Latest Codex CLI requires `wire_api = \"responses\"`; chat-only provider configs are no longer accepted.",
+            "If `/v1/chat/completions` works but `/v1/responses` fails, that backend is not currently compatible with the latest Codex runner.",
+            "If the backend is chat-only and you still want to test it through Codex, try `@openai/codex@0.57.0` with top-level `model_provider` / `model` plus `wire_api = \"chat\"`.",
+            "For local model backends, vLLM is the safest path. Ollama only works when its `/v1/responses` endpoint works; chat-only SGLang deployments will fail with the latest Codex.",
+        ]
+        if wire_api and wire_api != "responses":
+            hints.insert(0, f"Your current provider config uses `wire_api = \"{wire_api}\"`; switch it to `wire_api = \"responses\"` first.")
+        return hints
+
     def _codex_probe_failure_guidance(self, config: dict) -> tuple[list[str], list[str]]:
         profile = self._codex_profile_name(config)
+        config_dir = str(config.get("config_dir") or "~/.codex").strip()
+        metadata = provider_profile_metadata_from_home(config_dir, profile=profile) if profile else {}
         if profile:
+            provider_hints = self._provider_profile_probe_hints(metadata)
+            local_hints = self._local_provider_probe_hints(metadata)
             return (
                 [
                     f"Codex profile `{profile}` did not complete the startup hello probe successfully.",
@@ -1284,6 +1323,8 @@ Use **Test** when the file exposes runtime dependencies.
                     f"Run `codex --profile {profile}` in a terminal and confirm that profile can start normally.",
                     "If the profile uses a custom provider, make sure its API key, Base URL, and model configuration are available to Codex.",
                     "If the provider expects the model from the Codex profile itself, set `model: inherit` in `~/DeepScientist/config/runners.yaml`.",
+                    *provider_hints,
+                    *local_hints,
                     "Then run `ds doctor` and start DeepScientist again.",
                 ],
             )

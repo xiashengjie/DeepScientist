@@ -39,7 +39,9 @@ This page is the shortest path to the right document.
 - [05 TUI Guide](./05_TUI_GUIDE.md)
   Read this if your main surface is the terminal and you want one end-to-end path through `ds --tui`, quests, connectors, and cross-surface work.
 - [15 Codex Provider Setup](./15_CODEX_PROVIDER_SETUP.md)
-  Read this when you want to run DeepScientist through MiniMax, GLM, Volcengine Ark, Alibaba Bailian, or another Codex profile.
+  Read this when you want to run DeepScientist through MiniMax, GLM, Volcengine Ark, Alibaba Bailian Coding Plan, or another Codex profile.
+- [21 Local Model Backends Guide](./21_LOCAL_MODEL_BACKENDS_GUIDE.md)
+  Read this if you want to run DeepScientist through local OpenAI-compatible backends such as vLLM, Ollama, or SGLang.
 - [12 Guided Workflow Tour](./12_GUIDED_WORKFLOW_TOUR.md)
   Follow the real product flow from landing page to workspace, step by step.
 - [02 Start Research Guide](./02_START_RESEARCH_GUIDE.md)
@@ -90,6 +92,8 @@ This page is the shortest path to the right document.
   Start here for diagnostics and common runtime problems.
 - [15 Codex Provider Setup](./15_CODEX_PROVIDER_SETUP.md)
   Check this if the problem is likely in your Codex profile, provider endpoint, API key, or model configuration.
+- [21 Local Model Backends Guide](./21_LOCAL_MODEL_BACKENDS_GUIDE.md)
+  Check this if the problem is specifically about local OpenAI-compatible backends and whether they support `/v1/responses`.
 - [01 Settings Reference](./01_SETTINGS_REFERENCE.md)
   Check this if the problem is likely caused by config, credentials, or connector setup.
 

@@ -111,6 +111,7 @@ ds --codex /absolute/path/to/codex --codex-profile m27
 
 - 启动 DeepScientist 的这个 shell 中，provider API key 仍然可见
 - 该 profile 指向的是 provider 的 Coding Plan endpoint，而不是普通通用 API endpoint
+- 如果你走的是阿里百炼上的 Qwen，只能使用百炼 Coding Plan endpoint；普通百炼 / DashScope 平台的 Qwen API 这里不支持
 - 如果模型应该由 profile 自己决定，请在 `~/DeepScientist/config/runners.yaml` 中使用 `model: inherit`
 
 MiniMax 补充说明：

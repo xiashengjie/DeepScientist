@@ -317,6 +317,7 @@ ds --auth true
 ### 我想接自己的模型或外部协作面
 
 - [15 Codex Provider 配置](docs/zh/15_CODEX_PROVIDER_SETUP.md)
+- [21 本地模型后端指南](docs/zh/21_LOCAL_MODEL_BACKENDS_GUIDE.md)
 - [微信连接器指南](docs/zh/10_WEIXIN_CONNECTOR_GUIDE.md)
 - [QQ 连接器指南](docs/zh/03_QQ_CONNECTOR_GUIDE.md)
 - [Telegram Connector 指南](docs/zh/16_TELEGRAM_CONNECTOR_GUIDE.md)

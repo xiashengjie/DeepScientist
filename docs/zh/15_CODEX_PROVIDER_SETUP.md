@@ -2,6 +2,8 @@
 
 DeepScientist 不会为 MiniMax、GLM、火山方舟、阿里百炼单独实现一套 provider 适配器。
 
+如果你要使用阿里百炼上的 Qwen，需要特别注意：DeepScientist 只支持 **Coding Plan** 这条路径，不支持普通百炼 / DashScope 平台的 Qwen API。
+
 它复用的是你本机已经能正常工作的 Codex CLI 配置。
 
 推荐顺序始终是：
@@ -72,7 +74,7 @@ codex:
 | MiniMax | [MiniMax Codex CLI](https://platform.minimaxi.com/docs/coding-plan/codex-cli) | 否 | 使用你自己的 Codex profile，例如 `ds --codex-profile m27` |
 | GLM | [GLM Coding Plan：其他工具](https://docs.bigmodel.cn/cn/coding-plan/tool/others) | 否 | 使用一个指向 GLM coding endpoint 的 Codex profile |
 | 火山方舟 | [Ark Coding Plan 总览](https://www.volcengine.com/docs/82379/1925114?lang=zh) | 否 | 使用一个指向 Ark coding endpoint 的 Codex profile |
-| 阿里百炼 | [百炼 Coding Plan：其他工具](https://help.aliyun.com/zh/model-studio/other-tools-coding-plan) | 否 | 使用一个指向 Bailian coding endpoint 的 Codex profile |
+| 阿里百炼 | [百炼 Coding Plan：其他工具](https://help.aliyun.com/zh/model-studio/other-tools-coding-plan) | 否 | 使用一个指向 Bailian Coding Plan endpoint 的 Codex profile；不要使用普通百炼 / DashScope Qwen API |
 
 ## OpenAI
 
@@ -350,6 +352,11 @@ codex:
 ## 阿里百炼
 
 阿里百炼的 Coding Plan 官方文档也是 OpenAI-compatible endpoint 路径。它特别强调：必须使用 Coding Plan 专属 key 和 endpoint，而不是普通平台 endpoint。
+
+对 Qwen 这条路径，需要额外记住：
+
+- 支持：走百炼 **Coding Plan** 的 Qwen
+- 不支持：普通百炼 / DashScope 平台的 Qwen API
 
 官方文档：
 

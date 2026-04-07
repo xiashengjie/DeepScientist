@@ -2,6 +2,8 @@
 
 DeepScientist does not implement separate provider adapters for MiniMax, GLM, Volcengine Ark, or Alibaba Bailian.
 
+For Qwen on Alibaba Bailian, DeepScientist only supports the **Coding Plan** path. The generic Bailian or DashScope Qwen platform API is not supported here.
+
 Instead, it reuses the same Codex CLI setup that already works in your terminal.
 
 The recommended order is always:
@@ -71,7 +73,7 @@ Important:
 | MiniMax | [MiniMax Codex CLI](https://platform.minimaxi.com/docs/coding-plan/codex-cli) | No | your Codex profile, for example `ds --codex-profile m27` |
 | GLM | [GLM Coding Plan: Other Tools](https://docs.bigmodel.cn/cn/coding-plan/tool/others) | No | a Codex profile that targets the GLM coding endpoint |
 | Volcengine Ark | [Ark Coding Plan Overview](https://www.volcengine.com/docs/82379/1925114?lang=zh) | No | a Codex profile that targets the Ark coding endpoint |
-| Alibaba Bailian | [Bailian Coding Plan: Other Tools](https://help.aliyun.com/zh/model-studio/other-tools-coding-plan) | No | a Codex profile that targets the Bailian coding endpoint |
+| Alibaba Bailian | [Bailian Coding Plan: Other Tools](https://help.aliyun.com/zh/model-studio/other-tools-coding-plan) | No | a Codex profile that targets the Bailian Coding Plan endpoint; do not use the generic Bailian or DashScope Qwen API |
 
 ## OpenAI
 
@@ -349,6 +351,11 @@ codex:
 ## Alibaba Bailian
 
 Bailian documents Coding Plan as an OpenAI-compatible coding endpoint. It requires the Coding Plan-specific key and endpoint, not the generic platform endpoint.
+
+For Qwen specifically:
+
+- supported: Qwen through the Bailian **Coding Plan** endpoint
+- not supported: the generic Bailian or DashScope Qwen platform API
 
 Official docs:
 

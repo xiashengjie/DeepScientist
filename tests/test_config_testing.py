@@ -1113,6 +1113,105 @@ def test_codex_probe_failure_guidance_mentions_login_doctor_and_model(monkeypatc
     assert "codex login" in error_text
 
 
+def test_codex_probe_failure_guidance_mentions_responses_for_local_provider(monkeypatch, temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    manager = ConfigManager(temp_home)
+    manager.ensure_files()
+
+    source_codex_home = temp_home / "local-codex-home"
+    source_codex_home.mkdir(parents=True, exist_ok=True)
+    (source_codex_home / "config.toml").write_text(
+        """[model_providers.local8004]
+name = "local8004"
+base_url = "http://127.0.0.1:8004/v1"
+env_key = "LOCAL_API_KEY"
+wire_api = "responses"
+requires_openai_auth = false
+
+[profiles.local8004]
+model = "/model/gpt-oss-120b"
+model_provider = "local8004"
+""",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("deepscientist.config.service.resolve_runner_binary", lambda binary, runner_name=None: "/tmp/fake-codex")
+
+    def fake_run(command, **kwargs):  # noqa: ANN001
+        class Result:
+            returncode = 1
+            stdout = ""
+            stderr = "Internal Server Error"
+
+        return Result()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    result = manager._probe_codex_runner(
+        {
+            "binary": "codex",
+            "profile": "local8004",
+            "model": "inherit",
+            "config_dir": str(source_codex_home),
+        }
+    )
+
+    assert result["ok"] is False
+    guidance_text = "\n".join(result["guidance"])
+    assert "/v1/models" in guidance_text
+    assert "/v1/responses" in guidance_text
+    assert 'wire_api = "responses"' in guidance_text
+
+
+def test_codex_probe_failure_guidance_mentions_bailian_qwen_coding_plan_only(monkeypatch, temp_home: Path) -> None:
+    ensure_home_layout(temp_home)
+    manager = ConfigManager(temp_home)
+    manager.ensure_files()
+
+    source_codex_home = temp_home / "bailian-codex-home"
+    source_codex_home.mkdir(parents=True, exist_ok=True)
+    (source_codex_home / "config.toml").write_text(
+        """[model_providers.bailian]
+name = "bailian"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+env_key = "DASHSCOPE_API_KEY"
+wire_api = "responses"
+requires_openai_auth = false
+
+[profiles.bailian]
+model = "qwen-plus"
+model_provider = "bailian"
+""",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("deepscientist.config.service.resolve_runner_binary", lambda binary, runner_name=None: "/tmp/fake-codex")
+
+    def fake_run(command, **kwargs):  # noqa: ANN001
+        class Result:
+            returncode = 1
+            stdout = ""
+            stderr = "Bad Request"
+
+        return Result()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    result = manager._probe_codex_runner(
+        {
+            "binary": "codex",
+            "profile": "bailian",
+            "model": "inherit",
+            "config_dir": str(source_codex_home),
+        }
+    )
+
+    assert result["ok"] is False
+    guidance_text = "\n".join(result["guidance"])
+    assert "DashScope / Qwen platform API is not supported" in guidance_text
+    assert "https://coding.dashscope.aliyuncs.com/v1" in guidance_text
+
+
 def test_codex_probe_falls_back_to_codex_default_model_when_configured_model_is_unavailable(
     monkeypatch,
     temp_home: Path,
