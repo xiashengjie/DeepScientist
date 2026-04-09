@@ -1,6 +1,6 @@
 # 17 WhatsApp Connector Guide
 
-Use this guide when you want DeepScientist to continue a quest through WhatsApp.
+Use this guide when you want Uniresearch to continue a quest through WhatsApp.
 
 The current open-source runtime prefers the local-session path for WhatsApp:
 
@@ -10,7 +10,7 @@ The current open-source runtime prefers the local-session path for WhatsApp:
 
 ## 1. What WhatsApp support includes
 
-DeepScientist currently supports WhatsApp through:
+Uniresearch currently supports WhatsApp through:
 
 - `WhatsAppLocalSessionService` for local session sync and inbound ingestion
 - `GenericRelayChannel` for bindings, inbox/outbox, targets, and runtime status
@@ -27,7 +27,7 @@ For the recommended path, outbound delivery is queued into the local-session out
 5. Save the connector.
 6. Complete the local login flow for the WhatsApp session.
 7. Send one real message from WhatsApp.
-8. Return to DeepScientist and verify that the target conversation has been discovered.
+8. Return to Uniresearch and verify that the target conversation has been discovered.
 
 ## 3. Important config fields
 
@@ -55,7 +55,7 @@ WhatsApp conversations are normalized into quest-aware connector ids like:
 - `whatsapp:direct:<jid>`
 - `whatsapp:group:<jid>`
 
-DeepScientist binds quests to those normalized conversation ids instead of transient browser/session state.
+Uniresearch binds quests to those normalized conversation ids instead of transient browser/session state.
 
 Important rules:
 
@@ -67,7 +67,7 @@ Important rules:
 
 The current open-source path is local-session oriented:
 
-- runtime status is mirrored into DeepScientist under connector logs
+- runtime status is mirrored into Uniresearch under connector logs
 - inbound messages are drained from the local session inbox
 - outbound messages are queued into the local session outbox
 

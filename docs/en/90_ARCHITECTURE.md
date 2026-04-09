@@ -6,7 +6,7 @@ It describes the implementation that actually exists in this checkout. When code
 
 ## Goals
 
-DeepScientist is a small, local-first research operating system with these stable constraints:
+Uniresearch is a small, local-first research operating system with these stable constraints:
 
 - the authoritative runtime is Python
 - `npm` is the install and launch path
@@ -21,7 +21,7 @@ Important repository areas:
 
 - `bin/`
   - npm launcher entrypoint
-- `src/deepscientist/`
+- `src/Uniresearch/`
   - authoritative runtime, daemon, CLI, registries, quest state, connectors
 - `src/prompts/`
   - system prompt source
@@ -40,9 +40,9 @@ Important repository areas:
 
 The normal user path is:
 
-1. `npm install -g @researai/deepscientist`
+1. `npm install -g @researai/Uniresearch`
 2. run `ds`
-3. `bin/ds.js` ensures a locked uv-managed Python runtime is ready under `~/DeepScientist/runtime/python-env`
+3. `bin/ds.js` ensures a locked uv-managed Python runtime is ready under `~/Uniresearch/runtime/python-env`
 4. the launcher starts the Python daemon
 5. the daemon serves the web workspace and shared API surface
 6. the TUI and web UI both consume the same daemon contracts
@@ -51,7 +51,7 @@ The normal user path is:
 
 ## Runtime Home
 
-The default runtime home is `~/DeepScientist/`.
+The default runtime home is `~/Uniresearch/`.
 
 Key directories:
 
@@ -75,7 +75,7 @@ Key directories:
 
 ## Quest Model
 
-Each quest lives under `~/DeepScientist/quests/<quest_id>/` and is its own Git repository.
+Each quest lives under `~/Uniresearch/quests/<quest_id>/` and is its own Git repository.
 
 Important quest state lives in:
 
@@ -89,21 +89,21 @@ Important quest state lives in:
 - `.ds/events.jsonl`
 - `.ds/interaction_journal.jsonl`
 
-The quest layout contract is defined in `src/deepscientist/quest/layout.py`. If it changes, update quest services, daemon handlers, UI/TUI consumers, and tests together.
+The quest layout contract is defined in `src/Uniresearch/quest/layout.py`. If it changes, update quest services, daemon handlers, UI/TUI consumers, and tests together.
 
 ## Core Runtime Boundaries
 
 ### CLI
 
-- file: `src/deepscientist/cli.py`
+- file: `src/Uniresearch/cli.py`
 - responsibility: thin Python command surface over quest, config, doctor, and runtime services
 
 ### Daemon
 
 - files:
-  - `src/deepscientist/daemon/app.py`
-  - `src/deepscientist/daemon/api/router.py`
-  - `src/deepscientist/daemon/api/handlers.py`
+  - `src/Uniresearch/daemon/app.py`
+  - `src/Uniresearch/daemon/api/router.py`
+  - `src/Uniresearch/daemon/api/handlers.py`
 - responsibility:
   - serve the local web workspace
   - expose shared API routes
@@ -111,7 +111,7 @@ The quest layout contract is defined in `src/deepscientist/quest/layout.py`. If 
 
 ### Quest
 
-- files under `src/deepscientist/quest/`
+- files under `src/Uniresearch/quest/`
 - responsibility:
   - create quests
   - maintain quest snapshots
@@ -120,7 +120,7 @@ The quest layout contract is defined in `src/deepscientist/quest/layout.py`. If 
 
 ### Artifact
 
-- files under `src/deepscientist/artifact/`
+- files under `src/Uniresearch/artifact/`
 - responsibility:
   - durable structured artifacts
   - Git-backed quest operations
@@ -128,13 +128,13 @@ The quest layout contract is defined in `src/deepscientist/quest/layout.py`. If 
 
 ### Memory
 
-- files under `src/deepscientist/memory/`
+- files under `src/Uniresearch/memory/`
 - responsibility:
   - global and quest-scoped Markdown memory
 
 ### Bash Execution
 
-- files under `src/deepscientist/bash_exec/`
+- files under `src/Uniresearch/bash_exec/`
 - responsibility:
   - managed, stoppable, durable shell sessions
 
@@ -152,7 +152,7 @@ Git behavior stays inside `artifact`. Managed local tooling is a daemon/runtime 
 
 ## Registry-First Extension Points
 
-DeepScientist prefers small explicit registries over large dispatch branches.
+Uniresearch prefers small explicit registries over large dispatch branches.
 
 Current registry-backed areas include:
 
@@ -170,14 +170,14 @@ Patterns should stay close to:
 
 ## Managed Local Runtime Tools
 
-Managed local tools are optional helper runtimes installed under `~/DeepScientist/runtime/tools/`.
+Managed local tools are optional helper runtimes installed under `~/Uniresearch/runtime/tools/`.
 
 Examples:
 
 - TinyTeX for local `pdflatex`
 - future candidates such as `pandoc`, `graphviz`, or `ffmpeg`
 
-The runtime-tool layer lives under `src/deepscientist/runtime_tools/` and exists to:
+The runtime-tool layer lives under `src/Uniresearch/runtime_tools/` and exists to:
 
 - keep install logic out of unrelated subsystems
 - let the daemon and CLI inspect tool health in one place
@@ -195,14 +195,14 @@ Current pieces:
 - `runtime_tools/tinytex.py`
   - TinyTeX provider adapter
 
-Low-level TinyTeX implementation remains in `src/deepscientist/tinytex.py`.
+Low-level TinyTeX implementation remains in `src/Uniresearch/tinytex.py`.
 
 ## Prompt And Skill Flow
 
 Research workflow behavior should primarily live in:
 
 - `src/prompts/system.md`
-- `src/deepscientist/prompts/builder.py`
+- `src/Uniresearch/prompts/builder.py`
 - `src/skills/*/SKILL.md`
 
 The daemon should persist and route state, but avoid becoming a rigid workflow scheduler.

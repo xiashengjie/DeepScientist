@@ -1,6 +1,6 @@
-# DeepScientist 阿里云 SAE 部署指南
+# Uniresearch 阿里云 SAE 部署指南
 
-本文档详细说明如何在阿里云 SAE（Serverless 应用引擎）上部署 DeepScientist。
+本文档详细说明如何在阿里云 SAE（Serverless 应用引擎）上部署 Uniresearch。
 
 ## 目录
 
@@ -36,10 +36,10 @@ SAE 是 Serverless 环境，有以下特点需要注意：
 docker login --username=your_account registry.cn-shanghai.aliyuncs.com
 
 # 构建镜像
-docker build -t registry.cn-shanghai.aliyuncs.com/deepscientist/deepscientist:latest .
+docker build -t registry.cn-shanghai.aliyuncs.com/Uniresearch/Uniresearch:latest .
 
 # 推送镜像
-docker push registry.cn-shanghai.aliyuncs.com/deepscientist/deepscientist:latest
+docker push registry.cn-shanghai.aliyuncs.com/Uniresearch/Uniresearch:latest
 ```
 
 ### 2. 准备持久化存储（可选但推荐）
@@ -66,7 +66,7 @@ aliyun nas CreateFileSystem \
 1. 登录 [SAE 控制台](https://sae.console.aliyun.com/)
 2. 点击 **创建应用**
 3. 填写基本信息：
-   - 应用名称：`deepscientist`
+   - 应用名称：`Uniresearch`
    - 命名空间：选择或创建
 
 #### Step 2: 配置应用
@@ -97,8 +97,8 @@ aliyun nas CreateFileSystem \
 | 变量名 | 变量值 | 说明 |
 |--------|--------|------|
 | `VOLCENGINE_ARK_API_KEY` | `your_api_key` | 火山引擎 API Key |
-| `DEEPSCIENTIST_CODEX_PROFILE` | `ark` | 使用的 Codex profile |
-| `DEEPSCIENTIST_HOME` | `/home/deepscientist/DeepScientist` | 数据目录（可选） |
+| `Uniresearch_CODEX_PROFILE` | `ark` | 使用的 Codex profile |
+| `Uniresearch_HOME` | `/home/Uniresearch/Uniresearch` | 数据目录（可选） |
 
 > ⚠️ **重要**：必须配置正确的 API Key 和 PROFILE，否则启动会失败！
 
@@ -138,12 +138,12 @@ provider "alicloud" {
 }
 
 # 创建 SAE 应用
-resource "alicloud_sae_application" "deepscientist" {
-  app_name          = "deepscientist"
-  app_description   = "DeepScientist autonomous research studio"
+resource "alicloud_sae_application" "Uniresearch" {
+  app_name          = "Uniresearch"
+  app_description   = "Uniresearch autonomous research studio"
   namespace_id      = alicloud_sae_namespace.main.id
   deploy_type       = "Image"
-  image_url         = "registry.cn-shanghai.aliyuncs.com/deepscientist/deepscientist:latest"
+  image_url         = "registry.cn-shanghai.aliyuncs.com/Uniresearch/Uniresearch:latest"
   package_type      = "Image"
   package_version   = "latest"
   
@@ -163,8 +163,8 @@ resource "alicloud_sae_application" "deepscientist" {
   # 环境变量（关键！）
   environment_variables = {
     VOLCENGINE_ARK_API_KEY    = var.volcengine_api_key
-    DEEPSCIENTIST_CODEX_PROFILE = "ark"
-    DEEPSCIENTIST_HOME        = "/home/deepscientist/DeepScientist"
+    Uniresearch_CODEX_PROFILE = "ark"
+    Uniresearch_HOME        = "/home/Uniresearch/Uniresearch"
   }
   
   # 健康检查
@@ -190,19 +190,19 @@ resource "alicloud_sae_application" "deepscientist" {
   
   tags = {
     Environment = "production"
-    Application = "deepscientist"
+    Application = "Uniresearch"
   }
 }
 
 # 创建命名空间
 resource "alicloud_sae_namespace" "main" {
-  namespace_id   = "deepscientist-ns"
-  namespace_name = "deepscientist-namespace"
+  namespace_id   = "Uniresearch-ns"
+  namespace_name = "Uniresearch-namespace"
 }
 
 # 创建公网 SLB
 resource "alicloud_sae_load_balancer_internet" "main" {
-  app_id     = alicloud_sae_application.deepscientist.id
+  app_id     = alicloud_sae_application.Uniresearch.id
   port       = 80
   target_port = 20999
   protocol   = "TCP"
@@ -217,7 +217,7 @@ variable "volcengine_api_key" {
 
 output "access_url" {
   value = alicloud_sae_load_balancer_internet.main.ip
-  description = "DeepScientist access URL"
+  description = "Uniresearch access URL"
 }
 ```
 
@@ -247,16 +247,16 @@ terraform apply
 ```bash
 # 创建应用
 aliyun sae CreateApplication \
-  --AppName deepscientist \
+  --AppName Uniresearch \
   --NamespaceId cn-shanghai \
   --DeployType Image \
-  --ImageUrl registry.cn-shanghai.aliyuncs.com/deepscientist/deepscientist:latest \
+  --ImageUrl registry.cn-shanghai.aliyuncs.com/Uniresearch/Uniresearch:latest \
   --Cpu 2000 \
   --Memory 4096 \
   --Replicas 1 \
   --WebContainerPort 20999 \
   --Command "node bin/ds.js daemon --host 0.0.0.0 --port 20999" \
-  --EnvironmentVariables '{"VOLCENGINE_ARK_API_KEY":"your_api_key","DEEPSCIENTIST_CODEX_PROFILE":"ark"}'
+  --EnvironmentVariables '{"VOLCENGINE_ARK_API_KEY":"your_api_key","Uniresearch_CODEX_PROFILE":"ark"}'
 ```
 
 ---
@@ -265,20 +265,20 @@ aliyun sae CreateApplication \
 
 ### 必需环境变量
 
-DeepScientist 需要至少配置一个模型提供商的 API Key：
+Uniresearch 需要至少配置一个模型提供商的 API Key：
 
 ```bash
 # 方式1：火山引擎（推荐国内用户）
 VOLCENGINE_ARK_API_KEY=your_key_here
-DEEPSCIENTIST_CODEX_PROFILE=ark
+Uniresearch_CODEX_PROFILE=ark
 
 # 方式2：阿里云百炼
 BAILIAN_API_KEY=your_key_here
-DEEPSCIENTIST_CODEX_PROFILE=bailian
+Uniresearch_CODEX_PROFILE=bailian
 
 # 方式3：MiniMax
 MINIMAX_API_KEY=your_key_here
-DEEPSCIENTIST_CODEX_PROFILE=m27
+Uniresearch_CODEX_PROFILE=m27
 
 # 方式4：OpenAI
 OPENAI_API_KEY=your_key_here
@@ -288,7 +288,7 @@ OPENAI_API_KEY=your_key_here
 
 ```bash
 # 数据目录
-DEEPSCIENTIST_HOME=/home/deepscientist/DeepScientist
+Uniresearch_HOME=/home/Uniresearch/Uniresearch
 
 # Python 镜像（国内加速）
 UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
@@ -304,8 +304,8 @@ HTTPS_PROXY=http://proxy-server:port
 
 ```
 VOLCENGINE_ARK_API_KEY=3bb2f4ea-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-DEEPSCIENTIST_CODEX_PROFILE=ark
-DEEPSCIENTIST_HOME=/home/deepscientist/DeepScientist
+Uniresearch_CODEX_PROFILE=ark
+Uniresearch_HOME=/home/Uniresearch/Uniresearch
 ```
 
 > ⚠️ **注意**：API Key 不要包含多余空格或引号！
@@ -318,7 +318,7 @@ DEEPSCIENTIST_HOME=/home/deepscientist/DeepScientist
 
 **错误信息**：
 ```
-ERROR DeepScientist could not start because Codex is not ready yet.
+ERROR Uniresearch could not start because Codex is not ready yet.
 ERROR Codex did not answer the startup hello probe within 90 seconds.
 ```
 
@@ -334,7 +334,7 @@ ERROR Codex did not answer the startup hello probe within 90 seconds.
 # 在 SAE 控制台 → 应用详情 → 环境变量
 # 确认以下配置：
 # 1. VOLCENGINE_ARK_API_KEY = 正确的 API Key（不是 "your_key" 占位符）
-# 2. DEEPSCIENTIST_CODEX_PROFILE = ark
+# 2. Uniresearch_CODEX_PROFILE = ark
 
 # 查看启动日志
 # SAE 控制台 → 应用详情 → 实例详情 → 日志
@@ -366,7 +366,7 @@ ERROR Codex profile `xxx` did not complete the startup hello probe
 **原因**：指定的 profile 在配置文件中不存在
 
 **解决方案**：
-- 确认 `DEEPSCIENTIST_CODEX_PROFILE` 的值与 Codex 配置中的 profile 名称匹配
+- 确认 `Uniresearch_CODEX_PROFILE` 的值与 Codex 配置中的 profile 名称匹配
 - 可选值：`ark`、`bailian`、`m27`、`m25`、`glm`
 
 ### 问题4：启动超时
@@ -430,7 +430,7 @@ Liveness probe failed
 
 - [ ] 镜像已推送到 ACR
 - [ ] API Key 环境变量已配置（值正确，无多余空格/引号）
-- [ ] DEEPSCIENTIST_CODEX_PROFILE 与使用的 API Key 匹配
+- [ ] Uniresearch_CODEX_PROFILE 与使用的 API Key 匹配
 - [ ] 资源规格：CPU >= 1核，内存 >= 2GB
 - [ ] 端口配置：20999
 - [ ] 健康检查：初始延迟 >= 60 秒
@@ -448,8 +448,8 @@ Liveness probe failed
 键                          值
 -------------------------------------------
 VOLCENGINE_ARK_API_KEY     3bb2f4ea-e1a1-xxxx-xxxx-xxxxxxxxxxxx
-DEEPSCIENTIST_CODEX_PROFILE    ark
-DEEPSCIENTIST_HOME         /home/deepscientist/DeepScientist
+Uniresearch_CODEX_PROFILE    ark
+Uniresearch_HOME         /home/Uniresearch/Uniresearch
 ```
 
 ### SAE 端口配置

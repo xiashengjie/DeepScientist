@@ -1,19 +1,19 @@
-# 10 Weixin Connector Guide: Bind Personal WeChat To DeepScientist
+# 10 Weixin Connector Guide: Bind Personal WeChat To Uniresearch
 
-This guide explains the built-in DeepScientist Weixin connector.
+This guide explains the built-in Uniresearch Weixin connector.
 
-DeepScientist already includes the Weixin iLink runtime. You do not need to install OpenClaw, run `npx`, or configure a separate local bridge. The only required binding action is:
+Uniresearch already includes the Weixin iLink runtime. You do not need to install OpenClaw, run `npx`, or configure a separate local bridge. The only required binding action is:
 
 1. open `Settings > Connectors > WeChat`
 2. click `Bind WeChat`
 3. scan the QR code with WeChat
 4. confirm the login inside WeChat
 
-After confirmation, DeepScientist saves the Weixin connector automatically and starts long polling.
+After confirmation, Uniresearch saves the Weixin connector automatically and starts long polling.
 
 ## 1. What this connector does
 
-After binding succeeds, DeepScientist can:
+After binding succeeds, Uniresearch can:
 
 - receive WeChat text messages
 - receive WeChat image, video, and file attachments
@@ -25,22 +25,22 @@ After binding succeeds, DeepScientist can:
 Inbound media is materialized into the quest, not kept only in an ephemeral connector cache. The current path shape is:
 
 ```text
-~/DeepScientist/quests/<quest_id>/userfiles/weixin/<message_batch>/
+~/Uniresearch/quests/<quest_id>/userfiles/weixin/<message_batch>/
 ```
 
 That makes Weixin media behave much closer to the QQ path: the quest receives durable local files that the agent can read.
 
-![DeepScientist Weixin binding overview](../images/weixin/weixin-settings-bind.svg)
+![Uniresearch Weixin binding overview](../images/weixin/weixin-settings-bind.svg)
 
 ## 2. Before you bind
 
 Check these items first:
 
-- DeepScientist daemon and web UI are already running
+- Uniresearch daemon and web UI are already running
 - you can open `Settings > Connectors > WeChat`
 - you have a real personal WeChat account on the phone that will scan the QR code
 
-This reference screenshot is only there to remind you to use the phone that already holds the target WeChat account. The actual binding still happens from the DeepScientist QR modal, not from a separate `npx` tool.
+This reference screenshot is only there to remind you to use the phone that already holds the target WeChat account. The actual binding still happens from the Uniresearch QR modal, not from a separate `npx` tool.
 
 ![WeChat app reference](../images/weixin/weixin-plugin-entry.png)
 
@@ -53,16 +53,16 @@ Open:
 Then:
 
 1. click `Bind WeChat`
-2. wait for DeepScientist to generate the QR code
+2. wait for Uniresearch to generate the QR code
 3. scan it with WeChat
 4. confirm the login on the phone
 
 Important points:
 
-- the modal only shows the QR code because DeepScientist already knows the full iLink login flow
+- the modal only shows the QR code because Uniresearch already knows the full iLink login flow
 - there is no manual `bot_token` form during binding
 - there is no extra Save button inside the QR modal
-- when the platform returns `bot_token` and account ids, DeepScientist persists them automatically
+- when the platform returns `bot_token` and account ids, Uniresearch persists them automatically
 
 After success, the WeChat card shows:
 
@@ -79,7 +79,7 @@ After the QR login succeeds:
 
 1. bind a quest to the Weixin connector from `Start Research` or the project surface
 2. send one text, image, video, or file message from WeChat
-3. let DeepScientist ingest it into the quest
+3. let Uniresearch ingest it into the quest
 4. confirm the reply arrives in the same WeChat thread
 
 Current behavior:
@@ -89,7 +89,7 @@ Current behavior:
 - media-only inbound messages are no longer dropped
 - outbound text replies use the runtime-managed `context_token`
 - if the WeChat `context_token` is missing or goes stale, low-priority outbound updates are queued instead of being dropped
-- after the next inbound WeChat message refreshes the session, DeepScientist replays only the latest `5` queued updates, with a `2s` gap between sends
+- after the next inbound WeChat message refreshes the session, Uniresearch replays only the latest `5` queued updates, with a `2s` gap between sends
 - outbound image, video, and file delivery works when the agent sends a real local file path
 - outbound main-experiment metric charts are sent automatically as native WeChat images
 
@@ -115,7 +115,7 @@ instead of depending on an arbitrary external URL.
 
 ## 5.1 Automatic main-experiment metric charts
 
-When WeChat is the bound quest connector, DeepScientist now auto-sends metric timeline charts after each recorded main experiment.
+When WeChat is the bound quest connector, Uniresearch now auto-sends metric timeline charts after each recorded main experiment.
 
 Current behavior:
 
@@ -125,7 +125,7 @@ Current behavior:
 - any point that beats baseline gets a star marker
 - the latest point is filled with a deep Morandi red
 - earlier points are filled with a deep Morandi blue
-- if multiple metrics are present, DeepScientist sends them sequentially with about a 2 second gap
+- if multiple metrics are present, Uniresearch sends them sequentially with about a 2 second gap
 
 These charts are generated from quest-local files and delivered as native WeChat images in the bound thread.
 
@@ -137,9 +137,9 @@ Check:
 
 - the phone is scanning with the same WeChat account you want to bind
 - the phone finished the confirmation step inside WeChat
-- DeepScientist is still running while you wait
+- Uniresearch is still running while you wait
 
-If the QR expires, DeepScientist refreshes it automatically.
+If the QR expires, Uniresearch refreshes it automatically.
 
 ### I only see text, but not inbound media
 

@@ -1,6 +1,6 @@
 # 18 Feishu Connector Guide
 
-Use this guide when you want DeepScientist to continue a quest through Feishu / Lark.
+Use this guide when you want Uniresearch to continue a quest through Feishu / Lark.
 
 The current open-source runtime prefers the built-in long-connection path:
 
@@ -10,7 +10,7 @@ The current open-source runtime prefers the built-in long-connection path:
 
 ## 1. What Feishu support includes
 
-DeepScientist currently supports Feishu through:
+Uniresearch currently supports Feishu through:
 
 - `FeishuLongConnectionService` for inbound long-connection delivery
 - `GenericRelayChannel` for bindings, inbox/outbox, targets, and runtime status
@@ -29,7 +29,7 @@ This means Feishu already fits the same quest-binding model as the other connect
 7. Fill `app_id` and `app_secret`.
 8. Save the connector.
 9. Send one real message to the bot.
-10. Return to DeepScientist and confirm that the target conversation has been discovered.
+10. Return to Uniresearch and confirm that the target conversation has been discovered.
 
 ## 3. Important config fields
 
@@ -59,7 +59,7 @@ Feishu conversations are normalized into quest-aware connector ids like:
 - `feishu:direct:<chat_id>`
 - `feishu:group:<chat_id>`
 
-DeepScientist binds quests to those normalized conversation ids, not to transient callback payloads.
+Uniresearch binds quests to those normalized conversation ids, not to transient callback payloads.
 
 Important rules:
 

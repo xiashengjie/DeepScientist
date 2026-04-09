@@ -1,6 +1,6 @@
-# DeepScientist Docker 启动指南
+# Uniresearch Docker 启动指南
 
-本文档详细说明如何使用 `docker run` 命令直接启动 DeepScientist 容器。
+本文档详细说明如何使用 `docker run` 命令直接启动 Uniresearch 容器。
 
 ## 目录
 
@@ -21,23 +21,23 @@
 
 ```bash
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   -p 20999:20999 \
   -e VOLCENGINE_ARK_API_KEY=your_api_key_here \
-  deepscientist:latest
+  Uniresearch:latest
 ```
 
 ### 带持久化存储
 
 ```bash
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   -p 20999:20999 \
-  -v deepscientist-home:/home/deepscientist/DeepScientist \
-  -v deepscientist-codex:/home/deepscientist/.codex \
+  -v Uniresearch-home:/home/Uniresearch/Uniresearch \
+  -v Uniresearch-codex:/home/Uniresearch/.codex \
   -e VOLCENGINE_ARK_API_KEY=your_api_key_here \
   --restart unless-stopped \
-  deepscientist:latest
+  Uniresearch:latest
 ```
 
 ---
@@ -49,7 +49,7 @@ docker run -d \
 | 参数 | 说明 | 示例 |
 |------|------|------|
 | `-d` | 后台运行（守护进程模式） | `-d` |
-| `--name` | 容器名称 | `--name deepscientist` |
+| `--name` | 容器名称 | `--name Uniresearch` |
 | `--restart` | 重启策略 | `--restart unless-stopped` |
 
 ### 端口映射
@@ -88,7 +88,7 @@ docker run -d \
 
 ### 必需环境变量
 
-DeepScientist 需要配置大模型提供商的 API Key：
+Uniresearch 需要配置大模型提供商的 API Key：
 
 ```bash
 # 火山引擎 Ark（推荐国内用户）
@@ -104,11 +104,11 @@ DeepScientist 需要配置大模型提供商的 API Key：
 ### 可选环境变量
 
 ```bash
-# DeepScientist 主目录
--e DEEPSCIENTIST_HOME=/home/deepscientist/DeepScientist
+# Uniresearch 主目录
+-e Uniresearch_HOME=/home/Uniresearch/Uniresearch
 
 # 指定 Codex 配置文件中的 profile 名称
--e DEEPSCIENTIST_CODEX_PROFILE=ark
+-e Uniresearch_CODEX_PROFILE=ark
 
 # Python pip 镜像（国内推荐）
 -e UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
@@ -121,17 +121,17 @@ DeepScientist 需要配置大模型提供商的 API Key：
 ```bash
 # .env 文件内容
 VOLCENGINE_ARK_API_KEY=your_api_key_here
-DEEPSCIENTIST_CODEX_PROFILE=ark
+Uniresearch_CODEX_PROFILE=ark
 ```
 
 启动时引用：
 
 ```bash
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   -p 20999:20999 \
   --env-file .env \
-  deepscientist:latest
+  Uniresearch:latest
 ```
 
 ---
@@ -142,40 +142,40 @@ docker run -d \
 
 | 容器路径 | 说明 | 挂载建议 |
 |----------|------|----------|
-| `/home/deepscientist/DeepScientist` | 主数据目录（quests、memory、config） | 必须持久化 |
-| `/home/deepscientist/.codex` | Codex 配置目录 | 建议持久化 |
+| `/home/Uniresearch/Uniresearch` | 主数据目录（quests、memory、config） | 必须持久化 |
+| `/home/Uniresearch/.codex` | Codex 配置目录 | 建议持久化 |
 
 ### 使用命名卷（推荐）
 
 ```bash
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   -p 20999:20999 \
-  -v deepscientist-data:/home/deepscientist/DeepScientist \
-  -v deepscientist-codex:/home/deepscientist/.codex \
-  deepscientist:latest
+  -v Uniresearch-data:/home/Uniresearch/Uniresearch \
+  -v Uniresearch-codex:/home/Uniresearch/.codex \
+  Uniresearch:latest
 ```
 
 ### 使用主机目录
 
 ```bash
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   -p 20999:20999 \
-  -v /path/to/data:/home/deepscientist/DeepScientist \
-  -v /path/to/codex:/home/deepscientist/.codex \
-  deepscientist:latest
+  -v /path/to/data:/home/Uniresearch/Uniresearch \
+  -v /path/to/codex:/home/Uniresearch/.codex \
+  Uniresearch:latest
 ```
 
 ### 使用 --mount 语法
 
 ```bash
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   -p 20999:20999 \
-  --mount type=volume,src=deepscientist-data,dst=/home/deepscientist/DeepScientist \
-  --mount type=volume,src=deepscientist-codex,dst=/home/deepscientist/.codex \
-  deepscientist:latest
+  --mount type=volume,src=Uniresearch-data,dst=/home/Uniresearch/Uniresearch \
+  --mount type=volume,src=Uniresearch-codex,dst=/home/Uniresearch/.codex \
+  Uniresearch:latest
 ```
 
 ---
@@ -199,14 +199,14 @@ docker run -d \
 
 ```bash
 # 创建网络
-docker network create deepscientist-net
+docker network create Uniresearch-net
 
 # 启动容器连接到网络
 docker run -d \
-  --name deepscientist \
-  --network deepscientist-net \
+  --name Uniresearch \
+  --network Uniresearch-net \
   -p 20999:20999 \
-  deepscientist:latest
+  Uniresearch:latest
 ```
 
 ### 使用主机网络模式
@@ -214,9 +214,9 @@ docker run -d \
 ```bash
 # 直接使用主机网络（不需要端口映射）
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   --network host \
-  deepscientist:latest
+  Uniresearch:latest
 ```
 
 > 注意：主机网络模式下，容器将直接使用宿主机的网络栈，无需端口映射，但可能有安全风险。
@@ -229,22 +229,22 @@ docker run -d \
 
 ```bash
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   -p 20999:20999 \
   -e VOLCENGINE_ARK_API_KEY=your_api_key \
-  deepscientist:latest
+  Uniresearch:latest
 ```
 
 ### 场景二：生产部署（完整配置）
 
 ```bash
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   -p 20999:20999 \
-  -v deepscientist-data:/home/deepscientist/DeepScientist \
-  -v deepscientist-codex:/home/deepscientist/.codex \
+  -v Uniresearch-data:/home/Uniresearch/Uniresearch \
+  -v Uniresearch-codex:/home/Uniresearch/.codex \
   -e VOLCENGINE_ARK_API_KEY=your_api_key \
-  -e DEEPSCIENTIST_CODEX_PROFILE=ark \
+  -e Uniresearch_CODEX_PROFILE=ark \
   --restart unless-stopped \
   --memory 8g \
   --cpus 4 \
@@ -255,33 +255,33 @@ docker run -d \
   --log-driver json-file \
   --log-opt max-size=10m \
   --log-opt max-file=3 \
-  deepscientist:latest
+  Uniresearch:latest
 ```
 
 ### 场景三：仅本地访问（安全模式）
 
 ```bash
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   -p 127.0.0.1:20999:20999 \
-  -v deepscientist-data:/home/deepscientist/DeepScientist \
+  -v Uniresearch-data:/home/Uniresearch/Uniresearch \
   -e VOLCENGINE_ARK_API_KEY=your_api_key \
   --restart unless-stopped \
-  deepscientist:latest
+  Uniresearch:latest
 ```
 
 ### 场景四：使用反向代理
 
 ```bash
-# 启动 DeepScientist（仅本地访问）
+# 启动 Uniresearch（仅本地访问）
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   -p 127.0.0.1:20999:20999 \
-  -v deepscientist-data:/home/deepscientist/DeepScientist \
+  -v Uniresearch-data:/home/Uniresearch/Uniresearch \
   --restart unless-stopped \
   --network web-proxy \
   -e VOLCENGINE_ARK_API_KEY=your_api_key \
-  deepscientist:latest
+  Uniresearch:latest
 
 # 然后配置 Nginx/Traefik/Caddy 反向代理
 ```
@@ -291,31 +291,31 @@ docker run -d \
 ```bash
 # 实例 1
 docker run -d \
-  --name deepscientist-1 \
+  --name Uniresearch-1 \
   -p 20999:20999 \
-  -v deepscientist-data-1:/home/deepscientist/DeepScientist \
+  -v Uniresearch-data-1:/home/Uniresearch/Uniresearch \
   -e VOLCENGINE_ARK_API_KEY=your_api_key \
-  deepscientist:latest
+  Uniresearch:latest
 
 # 实例 2
 docker run -d \
-  --name deepscientist-2 \
+  --name Uniresearch-2 \
   -p 21000:20999 \
-  -v deepscientist-data-2:/home/deepscientist/DeepScientist \
+  -v Uniresearch-data-2:/home/Uniresearch/Uniresearch \
   -e VOLCENGINE_ARK_API_KEY=your_api_key \
-  deepscientist:latest
+  Uniresearch:latest
 ```
 
 ### 场景六：挂载自定义 Codex 配置
 
 ```bash
 docker run -d \
-  --name deepscientist \
+  --name Uniresearch \
   -p 20999:20999 \
-  -v deepscientist-data:/home/deepscientist/DeepScientist \
-  -v /path/to/your/codex-config.toml:/home/deepscientist/.codex/config.toml:ro \
+  -v Uniresearch-data:/home/Uniresearch/Uniresearch \
+  -v /path/to/your/codex-config.toml:/home/Uniresearch/.codex/config.toml:ro \
   -e VOLCENGINE_ARK_API_KEY=your_api_key \
-  deepscientist:latest
+  Uniresearch:latest
 ```
 
 ---
@@ -326,28 +326,28 @@ docker run -d \
 
 ```bash
 # 查看容器状态
-docker ps -a --filter name=deepscientist
+docker ps -a --filter name=Uniresearch
 
 # 查看容器详情
-docker inspect deepscientist
+docker inspect Uniresearch
 
 # 查看日志
-docker logs deepscientist
-docker logs deepscientist -f  # 实时查看
-docker logs deepscientist --tail 100  # 最后 100 行
+docker logs Uniresearch
+docker logs Uniresearch -f  # 实时查看
+docker logs Uniresearch --tail 100  # 最后 100 行
 
 # 进入容器
-docker exec -it deepscientist /bin/bash
+docker exec -it Uniresearch /bin/bash
 
 # 重启容器
-docker restart deepscientist
+docker restart Uniresearch
 
 # 停止容器
-docker stop deepscientist
+docker stop Uniresearch
 
 # 删除容器
-docker rm deepscientist
-docker rm -f deepscientist  # 强制删除（运行中也可删除）
+docker rm Uniresearch
+docker rm -f Uniresearch  # 强制删除（运行中也可删除）
 ```
 
 ### 卷管理
@@ -357,10 +357,10 @@ docker rm -f deepscientist  # 强制删除（运行中也可删除）
 docker volume ls
 
 # 查看卷详情
-docker volume inspect deepscientist-data
+docker volume inspect Uniresearch-data
 
 # 删除卷（注意：会删除数据）
-docker volume rm deepscientist-data
+docker volume rm Uniresearch-data
 
 # 删除未使用的卷
 docker volume prune
@@ -370,29 +370,29 @@ docker volume prune
 
 ```bash
 # 查看镜像
-docker images deepscientist
+docker images Uniresearch
 
 # 删除镜像
-docker rmi deepscientist:latest
+docker rmi Uniresearch:latest
 
 # 构建镜像
-docker build -t deepscientist:latest .
+docker build -t Uniresearch:latest .
 
 # 导出镜像
-docker save deepscientist:latest | gzip > deepscientist.tar.gz
+docker save Uniresearch:latest | gzip > Uniresearch.tar.gz
 
 # 导入镜像
-docker load < deepscientist.tar.gz
+docker load < Uniresearch.tar.gz
 ```
 
 ### 健康检查
 
 ```bash
 # 查看健康状态
-docker inspect --format='{{.State.Health.Status}}' deepscientist
+docker inspect --format='{{.State.Health.Status}}' Uniresearch
 
 # 查看健康检查日志
-docker inspect --format='{{json .State.Health}}' deepscientist | jq
+docker inspect --format='{{json .State.Health}}' Uniresearch | jq
 
 # 手动健康检查
 curl http://127.0.0.1:20999/api/health
@@ -406,11 +406,11 @@ curl http://127.0.0.1:20999/api/health
 
 ```bash
 # 查看详细错误
-docker logs deepscientist
+docker logs Uniresearch
 
 # 查看容器退出原因
-docker inspect --format='{{.State.ExitCode}}' deepscientist
-docker inspect --format='{{.State.Error}}' deepscientist
+docker inspect --format='{{.State.ExitCode}}' Uniresearch
+docker inspect --format='{{.State.Error}}' Uniresearch
 ```
 
 ### 端口被占用
@@ -420,50 +420,50 @@ docker inspect --format='{{.State.Error}}' deepscientist
 netstat -tlnp | grep 20999
 
 # 使用其他端口
-docker run -d --name deepscientist -p 21000:20999 deepscientist:latest
+docker run -d --name Uniresearch -p 21000:20999 Uniresearch:latest
 ```
 
 ### API Key 未生效
 
 ```bash
 # 检查环境变量
-docker exec deepscientist env | grep API_KEY
+docker exec Uniresearch env | grep API_KEY
 
 # 重新设置环境变量后重启
-docker rm -f deepscientist
-docker run -d --name deepscientist -p 20999:20999 -e VOLCENGINE_ARK_API_KEY=correct_key deepscientist:latest
+docker rm -f Uniresearch
+docker run -d --name Uniresearch -p 20999:20999 -e VOLCENGINE_ARK_API_KEY=correct_key Uniresearch:latest
 ```
 
 ### 数据丢失
 
 ```bash
 # 检查卷是否存在
-docker volume ls | grep deepscientist
+docker volume ls | grep Uniresearch
 
 # 如果使用了匿名卷，数据可能在以下位置
-docker inspect deepscientist --format='{{range .Mounts}}{{.Type}}: {{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
+docker inspect Uniresearch --format='{{range .Mounts}}{{.Type}}: {{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
 ```
 
 ### Codex 配置问题
 
 ```bash
 # 进入容器检查配置
-docker exec -it deepscientist /bin/bash
+docker exec -it Uniresearch /bin/bash
 cat ~/.codex/config.toml
 
 # 测试 Codex 连接
-docker exec -it deepscientist codex exec --profile ark --json --cd /tmp --skip-git-repo-check -
+docker exec -it Uniresearch codex exec --profile ark --json --cd /tmp --skip-git-repo-check -
 ```
 
 ### 内存不足
 
 ```bash
 # 查看容器资源使用
-docker stats deepscientist
+docker stats Uniresearch
 
 # 增加内存限制
-docker rm -f deepscientist
-docker run -d --name deepscientist --memory 16g -p 20999:20999 deepscientist:latest
+docker rm -f Uniresearch
+docker run -d --name Uniresearch --memory 16g -p 20999:20999 Uniresearch:latest
 ```
 
 ---
@@ -503,8 +503,8 @@ docker run -d --name deepscientist --memory 16g -p 20999:20999 deepscientist:lat
 #!/bin/bash
 
 # 配置变量
-IMAGE_NAME="deepscientist:latest"
-CONTAINER_NAME="deepscientist"
+IMAGE_NAME="Uniresearch:latest"
+CONTAINER_NAME="Uniresearch"
 HOST_PORT=20999
 API_KEY="your_api_key_here"  # 或从环境变量读取
 
@@ -515,10 +515,10 @@ docker rm -f $CONTAINER_NAME 2>/dev/null
 docker run -d \
   --name $CONTAINER_NAME \
   -p $HOST_PORT:20999 \
-  -v deepscientist-data:/home/deepscientist/DeepScientist \
-  -v deepscientist-codex:/home/deepscientist/.codex \
+  -v Uniresearch-data:/home/Uniresearch/Uniresearch \
+  -v Uniresearch-codex:/home/Uniresearch/.codex \
   -e VOLCENGINE_ARK_API_KEY=$API_KEY \
-  -e DEEPSCIENTIST_CODEX_PROFILE=ark \
+  -e Uniresearch_CODEX_PROFILE=ark \
   --restart unless-stopped \
   --memory 8g \
   --cpus 4 \
@@ -533,10 +533,10 @@ sleep 5
 
 # 健康检查
 if curl -s http://127.0.0.1:$HOST_PORT/api/health | grep -q '"status":"ok"'; then
-  echo "DeepScientist started successfully!"
+  echo "Uniresearch started successfully!"
   echo "Web UI: http://127.0.0.1:$HOST_PORT"
 else
-  echo "Failed to start DeepScientist. Check logs:"
+  echo "Failed to start Uniresearch. Check logs:"
   docker logs $CONTAINER_NAME
 fi
 ```
@@ -546,7 +546,7 @@ fi
 ```bash
 #!/bin/bash
 
-CONTAINER_NAME="deepscientist"
+CONTAINER_NAME="Uniresearch"
 
 echo "Stopping $CONTAINER_NAME..."
 docker stop $CONTAINER_NAME
@@ -559,7 +559,7 @@ echo "Container stopped and removed."
 ```bash
 #!/bin/bash
 
-BACKUP_DIR="/backup/deepscientist"
+BACKUP_DIR="/backup/Uniresearch"
 DATE=$(date +%Y%m%d_%H%M%S)
 
 # 创建备份目录
@@ -567,14 +567,14 @@ mkdir -p $BACKUP_DIR
 
 # 备份数据卷
 docker run --rm \
-  -v deepscientist-data:/data \
+  -v Uniresearch-data:/data \
   -v $BACKUP_DIR:/backup \
-  alpine tar czf /backup/deepscientist-data-$DATE.tar.gz -C /data .
+  alpine tar czf /backup/Uniresearch-data-$DATE.tar.gz -C /data .
 
 docker run --rm \
-  -v deepscientist-codex:/data \
+  -v Uniresearch-codex:/data \
   -v $BACKUP_DIR:/backup \
-  alpine tar czf /backup/deepscientist-codex-$DATE.tar.gz -C /data .
+  alpine tar czf /backup/Uniresearch-codex-$DATE.tar.gz -C /data .
 
 echo "Backup completed: $BACKUP_DIR"
 ```

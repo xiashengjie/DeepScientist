@@ -78,7 +78,7 @@ pytest
 Useful focused checks:
 
 ```bash
-python3 -m compileall src/deepscientist
+python3 -m compileall src/Uniresearch
 node -c bin/ds.js
 npm pack --dry-run --ignore-scripts
 ```
@@ -95,7 +95,7 @@ Before publishing or cutting a release, verify:
 
 ## Managed Runtime Tools
 
-Managed local tools live under `src/deepscientist/runtime_tools/`.
+Managed local tools live under `src/Uniresearch/runtime_tools/`.
 
 The goal is to keep optional local helper runtimes consistent and easy to extend.
 
@@ -116,7 +116,7 @@ The goal is to keep optional local helper runtimes consistent and easy to extend
 
 Every managed tool should follow the same pattern:
 
-1. Add a provider module under `src/deepscientist/runtime_tools/`.
+1. Add a provider module under `src/Uniresearch/runtime_tools/`.
 2. Expose a provider object with:
    - `tool_name`
    - `status()`
@@ -162,7 +162,7 @@ def register_builtin_runtime_tools(*, home=None) -> None:
 Use it from runtime code:
 
 ```python
-from deepscientist.runtime_tools import RuntimeToolService
+from Uniresearch.runtime_tools import RuntimeToolService
 
 
 service = RuntimeToolService(home)
@@ -175,7 +175,7 @@ match = service.resolve_binary("example-binary", preferred_tools=("example",))
 - keep the tool optional unless it is absolutely required for the core product
 - do not add a public MCP namespace for it
 - do not wire it directly into unrelated modules when `RuntimeToolService` is enough
-- prefer install locations under `~/DeepScientist/runtime/tools/`
+- prefer install locations under `~/Uniresearch/runtime/tools/`
 - keep clear source reporting such as `tinytex` versus `path`
 - add tests for registration, status, and binary resolution
 
@@ -200,11 +200,11 @@ If you need new durable shell behavior, add it under `bash_exec`.
 
 #### Files to change
 
-- `src/deepscientist/mcp/server.py`
+- `src/Uniresearch/mcp/server.py`
   - add the new `@server.tool(...)` handler under `build_memory_server(...)`, `build_artifact_server(...)`, or `build_bash_exec_server(...)`
-- `src/deepscientist/mcp/context.py`
+- `src/Uniresearch/mcp/context.py`
   - only if the new tool needs extra quest/runtime context wiring
-- `src/deepscientist/runners/codex.py`
+- `src/Uniresearch/runners/codex.py`
   - if the tool should appear in built-in MCP approval policy defaults, add it under `_BUILTIN_MCP_TOOL_APPROVALS`
 - `docs/en/07_MEMORY_AND_MCP.md`
   - update user-visible semantics if the tool changes how the namespace should be used
@@ -236,12 +236,12 @@ Skills are discovered from disk. The canonical location is:
 
 The runtime discovers skills through:
 
-- `src/deepscientist/skills/registry.py`
+- `src/Uniresearch/skills/registry.py`
 
 The prompt builder projects them through:
 
-- `src/deepscientist/prompts/builder.py`
-- `src/deepscientist/skills/installer.py`
+- `src/Uniresearch/prompts/builder.py`
+- `src/Uniresearch/skills/installer.py`
 
 #### Minimal skill shape
 
@@ -280,9 +280,9 @@ Optional projected agent files:
 
 - `src/skills/<skill_id>/SKILL.md`
   - required
-- `src/deepscientist/skills/registry.py`
+- `src/Uniresearch/skills/registry.py`
   - update `_DEFAULT_STAGE_SKILLS` or `_DEFAULT_COMPANION_SKILLS` if this is a canonical built-in stage or companion skill rather than an ad hoc custom one
-- `src/deepscientist/prompts/builder.py`
+- `src/Uniresearch/prompts/builder.py`
   - update `STAGE_MEMORY_PLAN` if the skill is a real stage that needs a first-class memory retrieval plan
 - `docs/en/14_PROMPT_SKILLS_AND_MCP_GUIDE.md`
   - update the skill guide if the public workflow shape changed
@@ -321,50 +321,50 @@ For a simple connector, changing only one layer is usually not enough.
 #### Core files to inspect first
 
 - config defaults:
-  - `src/deepscientist/config/models.py`
+  - `src/Uniresearch/config/models.py`
 - config validation and live test behavior:
-  - `src/deepscientist/config/service.py`
+  - `src/Uniresearch/config/service.py`
 - connector profile support:
-  - `src/deepscientist/connector/connector_profiles.py`
+  - `src/Uniresearch/connector/connector_profiles.py`
 - inbound/outbound adaptation:
-  - `src/deepscientist/bridges/base.py`
-  - `src/deepscientist/bridges/connectors.py`
-  - `src/deepscientist/bridges/builtins.py`
+  - `src/Uniresearch/bridges/base.py`
+  - `src/Uniresearch/bridges/connectors.py`
+  - `src/Uniresearch/bridges/builtins.py`
 - channel delivery:
-  - `src/deepscientist/channels/base.py`
-  - `src/deepscientist/channels/builtins.py`
+  - `src/Uniresearch/channels/base.py`
+  - `src/Uniresearch/channels/builtins.py`
 - daemon lifecycle:
-  - `src/deepscientist/daemon/app.py`
+  - `src/Uniresearch/daemon/app.py`
 - API endpoints:
-  - `src/deepscientist/daemon/api/router.py`
-  - `src/deepscientist/daemon/api/handlers.py`
+  - `src/Uniresearch/daemon/api/router.py`
+  - `src/Uniresearch/daemon/api/handlers.py`
 - optional prompt fragment:
   - `src/prompts/connectors/<connector>.md`
 
 #### Step-by-step connector checklist
 
-1. Add default config in `src/deepscientist/config/models.py`.
+1. Add default config in `src/Uniresearch/config/models.py`.
    - If it is a system connector, add it to `SYSTEM_CONNECTOR_NAMES`.
    - Add its default payload under `default_connectors()`.
-2. Add validation and config test behavior in `src/deepscientist/config/service.py`.
+2. Add validation and config test behavior in `src/Uniresearch/config/service.py`.
    - validate required tokens, ids, transport, and live probe behavior
 3. Decide whether it is profileable.
-   - If yes, add a spec in `src/deepscientist/connector/connector_profiles.py`
-4. Add or extend a bridge in `src/deepscientist/bridges/connectors.py`.
+   - If yes, add a spec in `src/Uniresearch/connector/connector_profiles.py`
+4. Add or extend a bridge in `src/Uniresearch/bridges/connectors.py`.
    - subclass `BaseConnectorBridge`
    - implement inbound parsing and outbound formatting / delivery as needed
-5. Register the bridge in `src/deepscientist/bridges/builtins.py`.
-6. Register a channel in `src/deepscientist/channels/builtins.py`.
+5. Register the bridge in `src/Uniresearch/bridges/builtins.py`.
+6. Register a channel in `src/Uniresearch/channels/builtins.py`.
    - use `GenericRelayChannel` when the standard relay flow is enough
    - add a dedicated channel class only when the connector needs special outbound behavior
 7. If the connector needs a long-running runtime such as polling, gateway, QR session, or long connection:
-   - add the service class under `src/deepscientist/channels/`
+   - add the service class under `src/Uniresearch/channels/`
    - add daemon state fields in `DaemonApp.__init__`
    - wire startup in `DaemonApp._start_background_connectors()`
    - wire shutdown in `DaemonApp._stop_background_connectors()`
 8. If the connector needs custom web/API flows beyond the generic inbound route:
-   - update `src/deepscientist/daemon/api/router.py`
-   - update `src/deepscientist/daemon/api/handlers.py`
+   - update `src/Uniresearch/daemon/api/router.py`
+   - update `src/Uniresearch/daemon/api/handlers.py`
 9. If the connector needs connector-specific prompt behavior:
    - add `src/prompts/connectors/<connector>.md`
    - the prompt builder will load it automatically when the connector is active or bound
@@ -398,21 +398,21 @@ For a simple connector, changing only one layer is usually not enough.
 Use this when you only need the shortest file-level reminder:
 
 - new MCP tool:
-  - `src/deepscientist/mcp/server.py`
-  - maybe `src/deepscientist/runners/codex.py`
+  - `src/Uniresearch/mcp/server.py`
+  - maybe `src/Uniresearch/runners/codex.py`
   - tests: `test_mcp_servers.py`
 - new skill:
   - `src/skills/<skill_id>/SKILL.md`
-  - maybe `src/deepscientist/skills/registry.py`
-  - maybe `src/deepscientist/prompts/builder.py`
+  - maybe `src/Uniresearch/skills/registry.py`
+  - maybe `src/Uniresearch/prompts/builder.py`
   - tests: `test_stage_skills.py`, `test_skill_contracts.py`, `test_prompt_builder.py`
 - new connector:
-  - `src/deepscientist/config/models.py`
-  - `src/deepscientist/config/service.py`
-  - maybe `src/deepscientist/connector/connector_profiles.py`
-  - `src/deepscientist/bridges/*`
-  - `src/deepscientist/channels/*`
-  - maybe `src/deepscientist/daemon/app.py`
+  - `src/Uniresearch/config/models.py`
+  - `src/Uniresearch/config/service.py`
+  - maybe `src/Uniresearch/connector/connector_profiles.py`
+  - `src/Uniresearch/bridges/*`
+  - `src/Uniresearch/channels/*`
+  - maybe `src/Uniresearch/daemon/app.py`
   - maybe `src/prompts/connectors/<connector>.md`
   - tests: connector validation + bridge + daemon/API coverage
 

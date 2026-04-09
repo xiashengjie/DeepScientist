@@ -1,6 +1,6 @@
 # 07 Memory 与 MCP：内建 MCP 和记忆协议
 
-本文定义 DeepScientist Core 内建的 3 个 MCP namespace 的含义与使用纪律：
+本文定义 Uniresearch Core 内建的 3 个 MCP namespace 的含义与使用纪律：
 
 - `memory`
 - `artifact`
@@ -106,7 +106,7 @@ memory.search(query="baseline novelty constraints", scope="both", kind="ideas", 
 示例：
 
 ```text
-memory.read(path="~/DeepScientist/quests/q-xxxx/memory/knowledge/metric-contract.md")
+memory.read(path="~/Uniresearch/quests/q-xxxx/memory/knowledge/metric-contract.md")
 ```
 
 ### `memory.write(...)`

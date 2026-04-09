@@ -1,14 +1,14 @@
-# 01 Settings Reference: Configure DeepScientist
+# 01 Settings Reference: Configure Uniresearch
 
-This manual documents the current DeepScientist `Settings` surface and the YAML files it actually edits. The structure intentionally follows a PyTorch-style reference pattern: short summary, schema, parameters, defaults, allowed values, runtime effect, and practical notes.
+This manual documents the current Uniresearch `Settings` surface and the YAML files it actually edits. The structure intentionally follows a PyTorch-style reference pattern: short summary, schema, parameters, defaults, allowed values, runtime effect, and practical notes.
 
 Implementation sources:
 
 - `src/ui/src/components/settings/settingsFormCatalog.ts`
 - `src/ui/src/components/settings/connectorCatalog.ts`
 - `src/ui/src/components/settings/RegistrySettingsForm.tsx`
-- `src/deepscientist/config/models.py`
-- `src/deepscientist/config/service.py`
+- `src/Uniresearch/config/models.py`
+- `src/Uniresearch/config/service.py`
 
 ## Overview
 
@@ -16,11 +16,11 @@ The `Settings` page writes directly to the following files:
 
 | File | UI category | Purpose |
 | --- | --- | --- |
-| `~/DeepScientist/config/config.yaml` | Runtime | Main runtime config: home path, daemon, UI, logging, Git, skill sync, cloud, ACP |
-| `~/DeepScientist/config/runners.yaml` | Models | Runner config: `codex` / `claude` binary path, model defaults, approval policy, sandbox, retries |
-| `~/DeepScientist/config/connectors.yaml` | Connectors | QQ, Telegram, Discord, Slack, Feishu, WhatsApp, Lingzhu connector config |
-| `~/DeepScientist/config/plugins.yaml` | Extensions | Plugin discovery, enable/disable overrides, trust policy |
-| `~/DeepScientist/config/mcp_servers.yaml` | MCP | External MCP servers only; not built-in `memory`, `artifact`, or `bash_exec` |
+| `~/Uniresearch/config/config.yaml` | Runtime | Main runtime config: home path, daemon, UI, logging, Git, skill sync, cloud, ACP |
+| `~/Uniresearch/config/runners.yaml` | Models | Runner config: `codex` / `claude` binary path, model defaults, approval policy, sandbox, retries |
+| `~/Uniresearch/config/connectors.yaml` | Connectors | QQ, Telegram, Discord, Slack, Feishu, WhatsApp, Lingzhu connector config |
+| `~/Uniresearch/config/plugins.yaml` | Extensions | Plugin discovery, enable/disable overrides, trust policy |
+| `~/Uniresearch/config/mcp_servers.yaml` | MCP | External MCP servers only; not built-in `memory`, `artifact`, or `bash_exec` |
 
 Button semantics:
 
@@ -37,12 +37,12 @@ Connector-specific setup guides:
 
 ### Summary
 
-`config.yaml` is the main runtime configuration file. It controls the DeepScientist home directory, default locale, daemon policy, Web/TUI binding, logging, Git behavior, skill mirroring, and optional cloud / ACP compatibility settings.
+`config.yaml` is the main runtime configuration file. It controls the Uniresearch home directory, default locale, daemon policy, Web/TUI binding, logging, Git behavior, skill mirroring, and optional cloud / ACP compatibility settings.
 
 ### Schema
 
 ```yaml
-home: ~/DeepScientist
+home: ~/Uniresearch
 default_runner: codex
 default_locale: en-US # or zh-CN, initialized from the browser on first web launch
 daemon:
@@ -82,13 +82,13 @@ connectors:
   direct_chat_enabled: true
 cloud:
   enabled: false
-  base_url: https://deepscientist.cc
+  base_url: https://Uniresearch.cc
   token: null
-  token_env: DEEPSCIENTIST_TOKEN
+  token_env: Uniresearch_TOKEN
   verify_token_on_start: false
   sync_mode: disabled
 acp:
-  compatibility_profile: deepscientist-acp-compat/v1
+  compatibility_profile: Uniresearch-acp-compat/v1
   events_transport: rest-poll
   sdk_bridge_enabled: false
   sdk_module: acp
@@ -99,10 +99,10 @@ acp:
 **`home`**
 
 - Type: `string`
-- Default: the installed DeepScientist home, usually `~/DeepScientist`
+- Default: the installed Uniresearch home, usually `~/Uniresearch`
 - UI label: `Home path`
 - Meaning: root directory for config, projects, memory, plugins, logs, and cache.
-- When to change: only when you intentionally installed DeepScientist somewhere else.
+- When to change: only when you intentionally installed Uniresearch somewhere else.
 - Notes: this is not a single project path; it is the runtime root.
 
 **`default_runner`**
@@ -121,7 +121,7 @@ acp:
 - Allowed values: `zh-CN`, `en-US`
 - UI label: `Default locale`
 - Meaning: default language preference used by prompts and runtime copy.
-- Notes: after the first browser-driven initialization, changing this field in `Settings` makes it a manual override and DeepScientist will not auto-follow the browser again.
+- Notes: after the first browser-driven initialization, changing this field in `Settings` makes it a manual override and Uniresearch will not auto-follow the browser again.
 
 ### Daemon policy
 
@@ -190,7 +190,7 @@ acp:
 - Default: `both`
 - Allowed values: `both`, `web`, `tui`
 - UI label: `Default start mode`
-- Meaning: preferred startup surface when launching DeepScientist.
+- Meaning: preferred startup surface when launching Uniresearch.
 
 ### Logging
 
@@ -256,7 +256,7 @@ Palette selection is no longer exposed in `Settings` or `config.yaml`.
   - `src/skills/experiment/SKILL.md`
   - `src/skills/analysis-campaign/SKILL.md`
   - `src/skills/write/SKILL.md`
-- DeepScientist uses a fixed Morandi palette guide instead of per-install color settings.
+- Uniresearch uses a fixed Morandi palette guide instead of per-install color settings.
 - The durable reference page is `docs/en/08_FIGURE_STYLE_GUIDE.md`.
 - Edit the prompt / skill contract if you need to change the default visual language.
 
@@ -283,24 +283,24 @@ Palette selection is no longer exposed in `Settings` or `config.yaml`.
 - Default: `true`
 - UI label: `Sync project skills on open`
 - Meaning: refresh project-local skill mirrors when an existing project is opened.
-- Prompt note: this refreshes quest-local skill and prompt mirrors for quests discovered under the configured DeepScientist home.
+- Prompt note: this refreshes quest-local skill and prompt mirrors for quests discovered under the configured Uniresearch home.
 
 Managed prompt behavior:
 
-- DeepScientist now treats `.codex/prompts/` as a managed active prompt tree rather than as a permanent hand-edited override.
+- Uniresearch now treats `.codex/prompts/` as a managed active prompt tree rather than as a permanent hand-edited override.
 - Before each real runner turn, it compares the active quest-local prompt tree against the current repository `src/prompts/` tree and automatically repairs drift.
 - If the active prompt tree differs, the previous tree is backed up under `.codex/prompt_versions/<backup_id>/` before the new active copy is written.
 - This run-time prompt sync happens against the actual quest root used for the turn, so it still works even when a quest lives outside the default `home/quests` path.
-- Runtime override: `ds daemon --prompt-version latest` uses the managed active tree, while `ds daemon --prompt-version <official_version>` runs that daemon session against the newest backup recorded for that formal DeepScientist version.
+- Runtime override: `ds daemon --prompt-version latest` uses the managed active tree, while `ds daemon --prompt-version <official_version>` runs that daemon session against the newest backup recorded for that formal Uniresearch version.
 - If you need one exact historical backup rather than the newest backup for that version, you may still pass the exact backup directory name from `.codex/prompt_versions/`.
 - The same override also exists for one-off CLI runs: `ds run --prompt-version <official_version> ...`.
 
 Managed auto-continue behavior:
 
 - `workspace_mode = copilot`
-  - after the current requested unit, DeepScientist normally parks and waits for the next user message or `/resume`
+  - after the current requested unit, Uniresearch normally parks and waits for the next user message or `/resume`
 - `workspace_mode = autonomous`
-  - if no real external long-running task exists yet, DeepScientist keeps using the next turns to prepare, launch, or durably route that real task
+  - if no real external long-running task exists yet, Uniresearch keeps using the next turns to prepare, launch, or durably route that real task
   - once a real external long-running task exists, auto-continue becomes low-frequency monitoring, roughly every `240` seconds by default
 - Auto-continue prompts now also carry a compact resume spine: latest user message, latest assistant checkpoint, latest run summary, recent memory cues, and current `bash_exec` state
 
@@ -343,7 +343,7 @@ This block is optional and not part of the local-first core path.
 **`cloud.base_url`**
 
 - Type: `string`
-- Default: `https://deepscientist.cc`
+- Default: `https://Uniresearch.cc`
 - UI label: `Cloud base URL`
 - Meaning: base URL of the cloud endpoint.
 
@@ -357,7 +357,7 @@ This block is optional and not part of the local-first core path.
 **`cloud.token_env`**
 
 - Type: `string`
-- Default: `DEEPSCIENTIST_TOKEN`
+- Default: `Uniresearch_TOKEN`
 - UI label: `Cloud token env var`
 - Meaning: environment variable name used to source the token.
 
@@ -383,7 +383,7 @@ These settings are compatibility knobs for ACP-style external consumers.
 **`acp.compatibility_profile`**
 
 - Type: `string`
-- Default: `deepscientist-acp-compat/v1`
+- Default: `Uniresearch-acp-compat/v1`
 - UI label: `Compatibility profile`
 - Meaning: named ACP compatibility profile exposed to external consumers.
 
@@ -465,8 +465,8 @@ claude:
 - `Test` behavior: checks whether the binary is on `PATH`.
 - Resolution order for `codex`: env override, explicit path, local `PATH`, then bundled fallback.
 - One-off note: you can temporarily override this with `ds --codex /absolute/path/to/codex`.
-- First-run note: DeepScientist does not finish Codex authentication for you. Before the first `ds`, make sure `codex login` (or just `codex`) has completed successfully.
-- Repair note: if the bundled dependency is missing after `npm install -g @researai/deepscientist`, install Codex explicitly with `npm install -g @openai/codex`.
+- First-run note: Uniresearch does not finish Codex authentication for you. Before the first `ds`, make sure `codex login` (or just `codex`) has completed successfully.
+- Repair note: if the bundled dependency is missing after `npm install -g @researai/Uniresearch`, install Codex explicitly with `npm install -g @openai/codex`.
 
 **`config_dir`**
 
@@ -491,7 +491,7 @@ claude:
 - Default: `codex=gpt-5.4`, `claude=inherit`
 - UI label: `Default model`
 - Meaning: default model used when a project does not override it.
-- Startup note: DeepScientist's Codex readiness probe uses this configured model first. If your Codex account cannot access it, DeepScientist falls back to the current Codex default model and persists `model: inherit`.
+- Startup note: Uniresearch's Codex readiness probe uses this configured model first. If your Codex account cannot access it, Uniresearch falls back to the current Codex default model and persists `model: inherit`.
 - Provider-profile note: when `profile` is set, `model: inherit` is usually the right choice so the Codex profile itself controls the provider model.
 
 **`model_reasoning_effort`**
@@ -501,7 +501,7 @@ claude:
 - UI label: `Reasoning effort`
 - Allowed values: `""`, `minimal`, `low`, `medium`, `high`, `xhigh`
 - Meaning: default reasoning intensity.
-- Compatibility note: when DeepScientist detects a Codex CLI older than `0.63.0`, it automatically downgrades `xhigh` to `high` for the startup probe and runner command. This covers MiniMax's currently recommended `@openai/codex@0.57.0` path.
+- Compatibility note: when Uniresearch detects a Codex CLI older than `0.63.0`, it automatically downgrades `xhigh` to `high` for the startup probe and runner command. This covers MiniMax's currently recommended `@openai/codex@0.57.0` path.
 
 **`approval_policy`**
 
@@ -532,7 +532,7 @@ claude:
   - `OPENAI_BASE_URL` and `OPENAI_API_KEY` are shown by default
   - changes are not auto-saved; click `Save env vars`
   - empty values are ignored and are not injected into the Codex process
-- Meaning: extra environment variables passed to Codex when DeepScientist starts a Codex run.
+- Meaning: extra environment variables passed to Codex when Uniresearch starts a Codex run.
 - Common use: provider-backed Codex setups that need API keys or custom base URLs.
 
 **`retry_on_failure`**
@@ -685,7 +685,7 @@ Primary fields:
 **`bot_name`**
 
 - Type: `string`
-- Default: `DeepScientist`
+- Default: `Uniresearch`
 
 **`bot_token`**
 
@@ -856,7 +856,7 @@ Primary fields:
 **`session_dir`**
 
 - Type: `string`
-- Default: `~/.deepscientist/connectors/whatsapp`
+- Default: `~/.Uniresearch/connectors/whatsapp`
 
 **`command_prefix`**
 
@@ -883,7 +883,7 @@ File-level companions:
 
 ### `qq`
 
-Summary: QQ is first-class in DeepScientist. The primary path is fixed `gateway_direct`, with no public callback URL required.
+Summary: QQ is first-class in Uniresearch. The primary path is fixed `gateway_direct`, with no public callback URL required.
 
 Quick start: see [QQ Connector Guide](./03_QQ_CONNECTOR_GUIDE.md).
 
@@ -908,7 +908,7 @@ Primary fields:
 **`bot_name`**
 
 - Type: `string`
-- Default: `DeepScientist`
+- Default: `Uniresearch`
 
 **`app_id`**
 
@@ -1005,7 +1005,7 @@ Do not treat QQ as a file browser by default.
 
 ```yaml
 load_paths:
-  - ~/DeepScientist/plugins
+  - ~/Uniresearch/plugins
 enabled: []
 disabled: []
 allow_unsigned: false
@@ -1016,7 +1016,7 @@ allow_unsigned: false
 **`load_paths`**
 
 - Type: `list[string]`
-- Default: `[~/DeepScientist/plugins]`
+- Default: `[~/Uniresearch/plugins]`
 - UI label: `Load paths`
 - Meaning: directories scanned for plugin bundles.
 

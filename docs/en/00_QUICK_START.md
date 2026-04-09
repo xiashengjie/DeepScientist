@@ -1,31 +1,31 @@
-# 00 Quick Start: Launch DeepScientist and Run Your First Project
+# 00 Quick Start: Launch Uniresearch and Run Your First Project
 
-Think of DeepScientist as a local workspace for long-running research tasks. You define the task, prepare the resources it needs, and DeepScientist keeps the files, branches, notes, and results on your machine.
+Think of Uniresearch as a local workspace for long-running research tasks. You define the task, prepare the resources it needs, and Uniresearch keeps the files, branches, notes, and results on your machine.
 
 This guide is written for first-time users. It is intentionally hands-on: one step, one action, one explanation.
 
 You will do four things:
 
-1. install DeepScientist
+1. install Uniresearch
 2. start the local runtime
 3. open the home page
 4. create a real project with a worked example
 
-The screenshots in this guide use the current live web UI at `deepscientist.cc:20999` as an example. Your local UI at `127.0.0.1:20999` should look the same or very close.
+The screenshots in this guide use the current live web UI at `Uniresearch.cc:20999` as an example. Your local UI at `127.0.0.1:20999` should look the same or very close.
 
-Current platform support: DeepScientist fully supports Linux and macOS. Native Windows support is currently experimental (strongly recommend WSL2 when you want the closest Linux-like terminal behavior).
+Current platform support: Uniresearch fully supports Linux and macOS. Native Windows support is currently experimental (strongly recommend WSL2 when you want the closest Linux-like terminal behavior).
 
 ## Safety First: Isolate Before You Start
 
-Before your first DeepScientist run, strongly adopt this baseline:
+Before your first Uniresearch run, strongly adopt this baseline:
 
 - if your environment allows it, prefer Docker, a virtual machine, or an equivalent isolation boundary
-- always run DeepScientist under a non-root account
+- always run Uniresearch under a non-root account
 - do not use a production host, critical server, or sensitive-data machine for the first run
 - do not casually share a `0.0.0.0` binding, reverse-proxy URL, or the web entry with other people
 - if you plan to bind WeChat, QQ, Lingzhu, or other connectors later, be even more conservative about public exposure
 
-The reason is simple: DeepScientist can execute commands, modify files, install dependencies, send external messages, and read or write project data. If you give it too much privilege, or expose it carelessly, the outcome can include server damage, data loss, secret leakage, connector misuse, or fabricated research outputs that are not caught in time.
+The reason is simple: Uniresearch can execute commands, modify files, install dependencies, send external messages, and read or write project data. If you give it too much privilege, or expose it carelessly, the outcome can include server damage, data loss, secret leakage, connector misuse, or fabricated research outputs that are not caught in time.
 
 See the full notice here:
 
@@ -41,7 +41,7 @@ Prepare these first:
   - provider-backed path: one working Codex profile such as `minimax`, `glm`, `ark`, or `bailian`
 - a model or API credential if your project needs external inference
 - GPU or server access if your experiments are compute-heavy
-- if you plan to run DeepScientist for real work, prepare Docker or another isolated environment and a dedicated non-root user
+- if you plan to run Uniresearch for real work, prepare Docker or another isolated environment and a dedicated non-root user
 - code, data, or repository links if the task starts from an existing baseline
 - optionally, one connector such as QQ if you want updates outside the web workspace
 
@@ -55,17 +55,17 @@ If you are still choosing a coding plan or subscription, these are practical sta
 - Alibaba Cloud Bailian Coding Plan: https://help.aliyun.com/zh/model-studio/coding-plan
 - Volcengine Ark Coding Plan: https://www.volcengine.com/docs/82379/1925115?lang=zh
 
-If you plan to use Qwen through Alibaba Bailian, use the Bailian **Coding Plan** endpoint only. The generic Bailian or DashScope Qwen API is not supported in the Codex-backed DeepScientist path.
+If you plan to use Qwen through Alibaba Bailian, use the Bailian **Coding Plan** endpoint only. The generic Bailian or DashScope Qwen API is not supported in the Codex-backed Uniresearch path.
 
 If you plan to use a provider-backed Codex profile instead of the default OpenAI login flow, read this next:
 
 - [15 Codex Provider Setup](./15_CODEX_PROVIDER_SETUP.md)
 
-## 1. Install Node.js and DeepScientist
+## 1. Install Node.js and Uniresearch
 
-DeepScientist fully supports Linux and macOS. Native Windows support is currently experimental (strongly recommend WSL2 when you want the most reliable Linux-like shell behavior).
+Uniresearch fully supports Linux and macOS. Native Windows support is currently experimental (strongly recommend WSL2 when you want the most reliable Linux-like shell behavior).
 
-Before installing DeepScientist itself, install Node.js from the official page:
+Before installing Uniresearch itself, install Node.js from the official page:
 
 https://nodejs.org/en/download
 
@@ -77,12 +77,12 @@ Make sure your environment satisfies:
 Run:
 
 ```bash
-npm install -g @researai/deepscientist
+npm install -g @researai/Uniresearch
 ```
 
 This installs the `ds` command globally.
 
-DeepScientist depends on a working Codex CLI. It prefers the `codex` already available on your machine and only falls back to the bundled npm dependency when no local Codex path is available. If `codex` is still missing afterward, repair it explicitly:
+Uniresearch depends on a working Codex CLI. It prefers the `codex` already available on your machine and only falls back to the bundled npm dependency when no local Codex path is available. If `codex` is still missing afterward, repair it explicitly:
 
 ```bash
 npm install -g @openai/codex
@@ -95,7 +95,7 @@ which codex
 codex login
 ```
 
-If `which codex` prints nothing, the issue is usually the npm global bin path rather than DeepScientist itself. Fix the shell PATH first, then rerun `npm install -g @openai/codex`.
+If `which codex` prints nothing, the issue is usually the npm global bin path rather than Uniresearch itself. Fix the shell PATH first, then rerun `npm install -g @openai/codex`.
 
 If you want local PDF compilation later, also run:
 
@@ -139,7 +139,7 @@ If you already use a named Codex profile for MiniMax, GLM, Volcengine Ark, Aliba
 codex --profile m27
 ```
 
-Then run DeepScientist through the same profile:
+Then run Uniresearch through the same profile:
 
 ```bash
 ds doctor --codex-profile m27
@@ -160,22 +160,22 @@ ds --codex /absolute/path/to/codex --codex-profile m27
 
 `m27` is the MiniMax profile name used consistently in this repo. MiniMax's own page currently uses `m21`, but the profile name is only a local alias; if you created a different name, use that same name in all commands.
 
-DeepScientist blocks startup until Codex can pass a real hello probe. The current default runner model in `~/DeepScientist/config/runners.yaml` is `inherit`. If your existing config still pins an explicit model while your provider expects the model to come from the profile itself, change it to `model: inherit`, or simply launch with `--codex-profile <name>` and let that session inherit the profile-defined model.
+Uniresearch blocks startup until Codex can pass a real hello probe. The current default runner model in `~/Uniresearch/config/runners.yaml` is `inherit`. If your existing config still pins an explicit model while your provider expects the model to come from the profile itself, change it to `model: inherit`, or simply launch with `--codex-profile <name>` and let that session inherit the profile-defined model.
 
 MiniMax note:
 
 - if the current `@openai/codex` latest does not work with MiniMax, install `npm install -g @openai/codex@0.57.0`
-- when DeepScientist detects a MiniMax profile on startup and the installed Codex CLI is not `0.57.0`, it now offers to reinstall `0.57.0` automatically in interactive terminal launches
+- when Uniresearch detects a MiniMax profile on startup and the installed Codex CLI is not `0.57.0`, it now offers to reinstall `0.57.0` automatically in interactive terminal launches
 - create a MiniMax `Coding Plan Key` first
 - for plain terminal `codex --profile <name>` checks, clear `OPENAI_API_KEY` and `OPENAI_BASE_URL` in the current shell before exporting `MINIMAX_API_KEY`
 - use `https://api.minimaxi.com/v1`
 - the `codex-MiniMax-*` model names shown on MiniMax's current Codex CLI page did not pass reliably through Codex CLI in local testing with the provided key
-- the locally verified DeepScientist model names are `MiniMax-M2.7` and `MiniMax-M2.5`
+- the locally verified Uniresearch model names are `MiniMax-M2.7` and `MiniMax-M2.5`
 - for `m25`, use `MiniMax-M2.5`, not `codex-MiniMax-M2.5`
-- DeepScientist can auto-adapt MiniMax's profile-only `model_provider` / `model` config shape during probe and runtime
-- DeepScientist also strips conflicting `OPENAI_*` auth variables automatically for providers that set `requires_openai_auth = false`
+- Uniresearch can auto-adapt MiniMax's profile-only `model_provider` / `model` config shape during probe and runtime
+- Uniresearch also strips conflicting `OPENAI_*` auth variables automatically for providers that set `requires_openai_auth = false`
 - if you also want plain terminal `codex --profile <name>` to work directly, add `model_provider = "minimax"` and the matching top-level model such as `MiniMax-M2.7` or `MiniMax-M2.5` to `~/.codex/config.toml`
-- DeepScientist automatically downgrades `xhigh` to `high` when it detects an older Codex CLI that does not support `xhigh`
+- Uniresearch automatically downgrades `xhigh` to `high` when it detects an older Codex CLI that does not support `xhigh`
 
 ## 3. Start the Local Runtime
 
@@ -193,30 +193,30 @@ Again, strongly recommended:
 - always run under a non-root user
 - do not expose the service publicly for your first run
 
-DeepScientist now uses `uv` to manage a locked local Python runtime. If a conda environment is already active and provides Python `>=3.11`, `ds` will prefer it. Otherwise it will bootstrap a managed Python under the DeepScientist home.
+Uniresearch now uses `uv` to manage a locked local Python runtime. If a conda environment is already active and provides Python `>=3.11`, `ds` will prefer it. Otherwise it will bootstrap a managed Python under the Uniresearch home.
 
-By default, the DeepScientist home is:
+By default, the Uniresearch home is:
 
-- macOS / Linux: `~/DeepScientist`
+- macOS / Linux: `~/Uniresearch`
 
-If you want to place the DeepScientist home under the current working directory instead, run:
+If you want to place the Uniresearch home under the current working directory instead, run:
 
 ```bash
 ds --here
 ```
 
-This is equivalent to `ds --home "$PWD/DeepScientist"`.
+This is equivalent to `ds --home "$PWD/Uniresearch"`.
 
 Important:  
-* if you start DeepScientist with `ds --here` or an explicit `--home <path>`, later management commands such as `ds --status` and `ds --stop` should use the same DeepScientist home  
-* using the same `DEEPSCIENTIST_HOME` or `DS_HOME` environment variable for those commands is also fine
-* otherwise, the CLI may fall back to the default `~/DeepScientist`, which can make a reachable daemon look like an unverified one  
+* if you start Uniresearch with `ds --here` or an explicit `--home <path>`, later management commands such as `ds --status` and `ds --stop` should use the same Uniresearch home  
+* using the same `Uniresearch_HOME` or `DS_HOME` environment variable for those commands is also fine
+* otherwise, the CLI may fall back to the default `~/Uniresearch`, which can make a reachable daemon look like an unverified one  
   
 For example, when using a non-default home, run:  
 
 ```bash
-ds --status --home /path/to/DeepScientist  
-ds --stop --home /path/to/DeepScientist
+ds --status --home /path/to/Uniresearch  
+ds --stop --home /path/to/Uniresearch
 ```
 
 If you want another port, run:
@@ -227,24 +227,24 @@ ds --port 21000
 
 This keeps everything the same, but serves the web UI on port `21000`.
 
-By default, DeepScientist starts without a local browser password gate.
+By default, Uniresearch starts without a local browser password gate.
 
 - open the normal local URL manually if the browser does not open automatically, such as `http://127.0.0.1:20999`
 - if you want a generated local browser password for one launch, run `ds --auth true`
-- on authenticated launches, DeepScientist prints the generated password in the terminal
-- if the browser is not authenticated yet, DeepScientist shows a password modal before loading the landing page and workspace
+- on authenticated launches, Uniresearch prints the generated password in the terminal
+- if the browser is not authenticated yet, Uniresearch shows a password modal before loading the landing page and workspace
 - after the first successful login, the browser keeps the local session and later visits usually do not need the password again
 - if you need to look up the password again for an authenticated launch, check the launch terminal or run `ds --status`
 
 ## 4. Open the Home Page
 
-When DeepScientist starts, open the home page at `/`.
+When Uniresearch starts, open the home page at `/`.
 
-![DeepScientist home page](../images/quickstart/00-home.png)
+![Uniresearch home page](../images/quickstart/00-home.png)
 
 After 12 hours of running, the projects surface will often look more like this:
 
-![DeepScientist projects surface](../assets/branding/projects.png)
+![Uniresearch projects surface](../assets/branding/projects.png)
 
 The two main entry points are:
 
@@ -257,7 +257,7 @@ Important update:
 
 - the product now asks you to choose a start style first
 - `Copilot` creates a quieter project that waits for your first instruction
-- `Autonomous` creates the standard DeepScientist project and starts moving immediately
+- `Autonomous` creates the standard Uniresearch project and starts moving immediately
 
 If you are unsure which one to choose, read [20 Workspace Modes Guide](./20_WORKSPACE_MODES_GUIDE.md) first.
 
@@ -309,7 +309,7 @@ Why this is a good request:
 
 If this is your first run, leave `Reusable baseline` empty.
 
-If you already imported a reusable official baseline into the registry, select it here instead. That lets DeepScientist attach the trusted baseline directly.
+If you already imported a reusable official baseline into the registry, select it here instead. That lets Uniresearch attach the trusted baseline directly.
 
 Paste this into `Baseline links`:
 
@@ -323,7 +323,7 @@ Paste this into `Reference papers / repos`:
 https://arxiv.org/abs/2602.00428
 ```
 
-These fields tell DeepScientist where the baseline comes from and what prior work defines the task.
+These fields tell Uniresearch where the baseline comes from and what prior work defines the task.
 
 ### 5.4 Add the runtime constraints
 
@@ -419,7 +419,7 @@ Each row is one project repository. Click the card to open it.
 
 ## 7. What Happens After Opening a Project
 
-After you create or open a project, DeepScientist takes you to the workspace page for that project.
+After you create or open a project, Uniresearch takes you to the workspace page for that project.
 
 The usual first loop is:
 
@@ -436,10 +436,10 @@ Check status:
 ds --status
 ```
 
-If you started DeepScientist with a non-default home, specify it explicitly:  
+If you started Uniresearch with a non-default home, specify it explicitly:  
 
 ```bash
-ds --status --home /path/to/DeepScientist
+ds --status --home /path/to/Uniresearch
 ```
 
 This shows whether the local runtime is up.
@@ -450,13 +450,13 @@ Stop the daemon:
 ds --stop
 ```
 
-If you started DeepScientist with a non-default home, specify it explicitly:  
+If you started Uniresearch with a non-default home, specify it explicitly:  
 
 ```bash
-ds --stop --home /path/to/DeepScientist
+ds --stop --home /path/to/Uniresearch
 ```
 
-This stops the local DeepScientist daemon.
+This stops the local Uniresearch daemon.
 
 Uninstall code and runtime, but keep local data:
 
@@ -464,10 +464,10 @@ Uninstall code and runtime, but keep local data:
 ds uninstall
 ```
 
-If you started DeepScientist with a non-default home, specify it explicitly:
+If you started Uniresearch with a non-default home, specify it explicitly:
 
 ```bash
-ds uninstall --home /path/to/DeepScientist --yes
+ds uninstall --home /path/to/Uniresearch --yes
 ```
 
 This removes launcher wrappers, local runtime code, and install-local code trees, but preserves:
@@ -479,16 +479,16 @@ This removes launcher wrappers, local runtime code, and install-local code trees
 - `plugins/`
 - `cache/`
 
-If you installed DeepScientist from npm and also want to remove the global npm package itself, run this after `ds uninstall`:
+If you installed Uniresearch from npm and also want to remove the global npm package itself, run this after `ds uninstall`:
 
 ```bash
-npm uninstall -g @researai/deepscientist
+npm uninstall -g @researai/Uniresearch
 ```
 
-If you really want to delete local data too, remove the DeepScientist home manually after uninstall:
+If you really want to delete local data too, remove the Uniresearch home manually after uninstall:
 
 ```bash
-rm -rf /path/to/DeepScientist
+rm -rf /path/to/Uniresearch
 ```
 
 Run diagnostics:
@@ -501,7 +501,7 @@ Use this when startup, config, runner, or connector behavior looks wrong.
 
 ## 9. What To Read Next
 
-- [DeepScientist Docs Index](./README.md)
+- [Uniresearch Docs Index](./README.md)
 - [12 Guided Workflow Tour](./12_GUIDED_WORKFLOW_TOUR.md)
 - [02 Start Research Guide](./02_START_RESEARCH_GUIDE.md)
 - [13 Core Architecture Guide](./13_CORE_ARCHITECTURE_GUIDE.md)
@@ -516,20 +516,20 @@ Use this when startup, config, runner, or connector behavior looks wrong.
 Run:
 
 ```bash
-bash install.sh --dir /data/DeepScientist
+bash install.sh --dir /data/Uniresearch
 ```
 
 Use this when you are working from a repository checkout but want the bundled CLI installed into a separate runtime location.
 
-### How do I move an existing DeepScientist home safely?
+### How do I move an existing Uniresearch home safely?
 
 Run:
 
 ```bash
-ds migrate /data/DeepScientist
+ds migrate /data/Uniresearch
 ```
 
-This is the supported way to migrate an existing DeepScientist home to a new path.
+This is the supported way to migrate an existing Uniresearch home to a new path.
 
 ### How do I bind on all interfaces?
 

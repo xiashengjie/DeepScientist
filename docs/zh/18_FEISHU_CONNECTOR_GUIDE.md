@@ -1,6 +1,6 @@
 # 18 Feishu Connector 指南
 
-当你希望通过 Feishu / Lark 继续推进 DeepScientist quest 时，请阅读这份指南。
+当你希望通过 Feishu / Lark 继续推进 Uniresearch quest 时，请阅读这份指南。
 
 当前开源版本中的 Feishu 推荐路径使用内置 long-connection 方案：
 
@@ -29,7 +29,7 @@
 7. 填写 `app_id` 与 `app_secret`。
 8. 保存连接器配置。
 9. 给 bot 发送一条真实消息。
-10. 回到 DeepScientist，确认目标会话已经被自动发现。
+10. 回到 Uniresearch，确认目标会话已经被自动发现。
 
 ## 3. 关键配置字段
 
@@ -59,7 +59,7 @@ Feishu 会话会被规范化成 quest-aware connector id，例如：
 - `feishu:direct:<chat_id>`
 - `feishu:group:<chat_id>`
 
-DeepScientist 绑定的是这个规范化后的 conversation id，而不是临时 callback payload。
+Uniresearch 绑定的是这个规范化后的 conversation id，而不是临时 callback payload。
 
 重要规则：
 

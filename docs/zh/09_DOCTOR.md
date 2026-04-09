@@ -1,13 +1,13 @@
 # 09 `ds doctor`：诊断与修复启动问题
 
-当 DeepScientist 安装后无法正常启动时，请使用 `ds doctor` 做一次本地诊断。
+当 Uniresearch 安装后无法正常启动时，请使用 `ds doctor` 做一次本地诊断。
 
 ## 推荐使用流程
 
-1. 先安装 DeepScientist：
+1. 先安装 Uniresearch：
 
    ```bash
-   npm install -g @researai/deepscientist
+   npm install -g @researai/Uniresearch
    ```
 
 2. 先确保 Codex 自己已经可用：
@@ -51,7 +51,7 @@
 ## `ds doctor` 会检查什么
 
 - 本地 Python 运行时是否健康
-- `~/DeepScientist` 是否存在且可写
+- `~/Uniresearch` 是否存在且可写
 - `uv` 是否可用，以便管理本地 Python 运行时
 - `git` 是否安装并完成基本配置
 - 必需配置文件是否有效
@@ -73,10 +73,10 @@
 
 ### 没有安装 Codex
 
-DeepScientist 会优先使用你机器上已有的 `codex`，只有本机不可用时才回退到随包依赖。如果两者都不可用，就重新安装 DeepScientist，让随包的 Codex 依赖一起装好：
+Uniresearch 会优先使用你机器上已有的 `codex`，只有本机不可用时才回退到随包依赖。如果两者都不可用，就重新安装 Uniresearch，让随包的 Codex 依赖一起装好：
 
 ```bash
-npm install -g @researai/deepscientist
+npm install -g @researai/Uniresearch
 ```
 
 如果装完以后 `codex` 仍然不可用，请显式安装：
@@ -97,16 +97,16 @@ codex login
 
 先完成一次登录，再重新执行 `ds doctor`。
 
-### Codex profile 在终端里可用，但 DeepScientist 还是失败
+### Codex profile 在终端里可用，但 Uniresearch 还是失败
 
-请显式让 DeepScientist 使用同一个 profile：
+请显式让 Uniresearch 使用同一个 profile：
 
 ```bash
 ds doctor --codex-profile m27
 ds --codex-profile m27
 ```
 
-如果你当前能用的是另一个不在 `PATH` 上的 Codex，可执行文件路径也可以一起显式传给 DeepScientist：
+如果你当前能用的是另一个不在 `PATH` 上的 Codex，可执行文件路径也可以一起显式传给 Uniresearch：
 
 ```bash
 ds doctor --codex /absolute/path/to/codex --codex-profile m27
@@ -117,37 +117,37 @@ ds --codex /absolute/path/to/codex --codex-profile m27
 
 同时检查：
 
-- 启动 DeepScientist 的这个 shell 中，provider API key 仍然可见
+- 启动 Uniresearch 的这个 shell 中，provider API key 仍然可见
 - 该 profile 指向的是 provider 的 Coding Plan endpoint，而不是普通通用 API endpoint
 - 如果你走的是阿里百炼上的 Qwen，只能使用百炼 Coding Plan endpoint；普通百炼 / DashScope 平台的 Qwen API 这里不支持
-- 如果模型应该由 profile 自己决定，请在 `~/DeepScientist/config/runners.yaml` 中使用 `model: inherit`
+- 如果模型应该由 profile 自己决定，请在 `~/Uniresearch/config/runners.yaml` 中使用 `model: inherit`
 
 MiniMax 补充说明：
 
 - 如果 MiniMax 在当前最新版 `@openai/codex` 上失败，直接安装 `npm install -g @openai/codex@0.57.0`
-- 如果 DeepScientist 在启动时检测到 MiniMax profile，但当前 Codex CLI 不是 `0.57.0`，现在会在交互式终端里主动提示是否自动安装 `0.57.0`
+- 如果 Uniresearch 在启动时检测到 MiniMax profile，但当前 Codex CLI 不是 `0.57.0`，现在会在交互式终端里主动提示是否自动安装 `0.57.0`
 - 先创建 MiniMax `Coding Plan Key`
 - 如果你要单独在终端里验证 `codex --profile <name>`，先在当前 shell 里执行 `unset OPENAI_API_KEY` 和 `unset OPENAI_BASE_URL`
 - 使用 `https://api.minimaxi.com/v1`
 - MiniMax 官方 Codex CLI 页面当前给出的 `codex-MiniMax-*` 模型名，在本地用提供的 key 实测并不能稳定通过 Codex CLI
-- 当前本地实测可用于 DeepScientist 的模型名是 `MiniMax-M2.7` 和 `MiniMax-M2.5`
+- 当前本地实测可用于 Uniresearch 的模型名是 `MiniMax-M2.7` 和 `MiniMax-M2.5`
 - 如果你要走 `m25`，请使用 `MiniMax-M2.5`，不要写成 `codex-MiniMax-M2.5`
-- DeepScientist 现在可以在 probe 和运行时自动适配 MiniMax profile-only 的 `model_provider` / `model` 配置形态
-- 当 provider 设置了 `requires_openai_auth = false` 时，DeepScientist 也会自动移除冲突的 `OPENAI_*` 认证环境变量
+- Uniresearch 现在可以在 probe 和运行时自动适配 MiniMax profile-only 的 `model_provider` / `model` 配置形态
+- 当 provider 设置了 `requires_openai_auth = false` 时，Uniresearch 也会自动移除冲突的 `OPENAI_*` 认证环境变量
 - 如果你还希望终端里的 `codex --profile <name>` 也直接可用，再在 `~/.codex/config.toml` 顶层补上 `model_provider = "minimax"`，以及对应的顶层 `model`，例如 `MiniMax-M2.7` 或 `MiniMax-M2.5`
-- 当 DeepScientist 检测到 Codex CLI 版本低于 `0.63.0` 时，会自动把 `xhigh` 降级成 `high`
+- 当 Uniresearch 检测到 Codex CLI 版本低于 `0.63.0` 时，会自动把 `xhigh` 降级成 `high`
 - 如果 provider 返回 `tool call result does not follow tool call (2013)`，应优先把它当作 tool call / tool result 顺序错误，而不是普通网络抖动
 - 如果 provider 返回 `invalid function arguments json string` 或 `failed to parse tool call arguments` 这类错误，应该先修正 tool 调用串行化/参数编码路径，再继续重试
 
 ### 当前配置的 Codex 模型不可用
 
-DeepScientist 会在启动前强制做一次真实的 Codex hello 探测。当前版本里，这个探测会先使用：
+Uniresearch 会在启动前强制做一次真实的 Codex hello 探测。当前版本里，这个探测会先使用：
 
 ```text
-~/DeepScientist/config/runners.yaml
+~/Uniresearch/config/runners.yaml
 ```
 
-里配置的 runner 模型，默认值是 `gpt-5.4`。如果你的 Codex 账号或本地 CLI 配置不能访问这个模型，DeepScientist 现在会自动重试当前 Codex 默认模型，并把后续运行持久化为 `model: inherit`。如果你仍然想指定某个具体模型，再手动改配置并重新执行：
+里配置的 runner 模型，默认值是 `gpt-5.4`。如果你的 Codex 账号或本地 CLI 配置不能访问这个模型，Uniresearch 现在会自动重试当前 Codex 默认模型，并把后续运行持久化为 `model: inherit`。如果你仍然想指定某个具体模型，再手动改配置并重新执行：
 
 ```bash
 ds doctor
@@ -163,7 +163,7 @@ ds doctor
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-如果你在 Windows PowerShell（但日常使用 DeepScientist 仍然强烈建议优先使用 WSL2）：
+如果你在 Windows PowerShell（但日常使用 Uniresearch 仍然强烈建议优先使用 WSL2）：
 
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
@@ -171,7 +171,7 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 ### 本地论文 PDF 编译暂时不可用
 
-如果你希望直接在 DeepScientist 里本地编译论文，可以安装一个轻量级 TinyTeX `pdflatex` 运行时：
+如果你希望直接在 Uniresearch 里本地编译论文，可以安装一个轻量级 TinyTeX `pdflatex` 运行时：
 
 ```bash
 ds latex install-runtime
@@ -181,7 +181,7 @@ ds latex install-runtime
 
 ### `20999` 端口被占用
 
-如果是 DeepScientist 自己之前启动的守护进程：
+如果是 Uniresearch 自己之前启动的守护进程：
 
 ```bash
 ds --stop
@@ -192,7 +192,7 @@ ds --stop
 如果是其他服务占用了端口，请修改：
 
 ```text
-~/DeepScientist/config/config.yaml
+~/Uniresearch/config/config.yaml
 ```
 
 里的 `ui.port`。
@@ -222,7 +222,7 @@ conda activate ds311
 ds
 ```
 
-如果你不手动切换，`ds` 也可以在 DeepScientist home 下自动准备受管的 `uv` + Python 运行时。
+如果你不手动切换，`ds` 也可以在 Uniresearch home 下自动准备受管的 `uv` + Python 运行时。
 
 ### Git 用户身份没有配置
 
@@ -239,7 +239,7 @@ git config --global user.email "you@example.com"
 请在：
 
 ```text
-~/DeepScientist/config/runners.yaml
+~/Uniresearch/config/runners.yaml
 ```
 
 里把它重新设为禁用。

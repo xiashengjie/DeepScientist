@@ -332,7 +332,7 @@ type StartResearchContractFields = {
 
 关于 workspace mode 的实际含义：
 
-- DeepScientist 还会区分用户导向的 `copilot` 模式和默认的 `autonomous` 模式。
+- Uniresearch 还会区分用户导向的 `copilot` 模式和默认的 `autonomous` 模式。
 - 在 `copilot` 下，当前请求单元完成后通常应该停驻，等待下一条用户消息或 `/resume`。
 - 在 `autonomous` 下，不能因为“当前还没有长任务在跑”就停住；系统应继续推进，直到下一个真实长任务被准备好或启动起来。
 
@@ -592,7 +592,7 @@ type StartResearchContractFields = {
 - `src/ui/src/lib/startResearch.ts`
 - `src/ui/src/components/projects/CreateProjectDialog.tsx`
 - `src/prompts/system.md`（如果运行时解释变了）
-- `src/deepscientist/prompts/builder.py`（如果 prompt 路由变了）
+- `src/Uniresearch/prompts/builder.py`（如果 prompt 路由变了）
 - 本文档
 - `docs/en/02_START_RESEARCH_GUIDE.md`
 - `tests/test_prompt_builder.py`

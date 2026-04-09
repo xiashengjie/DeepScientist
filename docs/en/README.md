@@ -1,23 +1,23 @@
-# DeepScientist Docs
+# Uniresearch Docs
 
-DeepScientist is not just a long-running autonomous scientific discovery system. It is also a persistent research map that lives on your own machine.
+Uniresearch is not just a long-running autonomous scientific discovery system. It is also a persistent research map that lives on your own machine.
 
 2 minutes to install. 2 minutes to bind Weixin. 2 minutes to launch. Extremely fast and easy to use.
 
-Local Web access now starts without a password gate by default. If you want a generated 16-character browser password for one launch, run `ds --auth true`; DeepScientist then prints the password in the terminal and the browser can reuse the stored login after the first successful entry.
+Local Web access now starts without a password gate by default. If you want a generated 16-character browser password for one launch, run `ds --auth true`; Uniresearch then prints the password in the terminal and the browser can reuse the stored login after the first successful entry.
 
 It is also a workshop-style collaboration environment: let it keep moving autonomously, or step in anytime to collaborate, edit code, run the terminal yourself, or keep notes and plans in a Notion-style workspace.
 
-Use DeepScientist anywhere: on the server through TUI, in the browser through Web, on the phone through Weixin or QQ, and even on glasses through Rokid Glasses.
+Use Uniresearch anywhere: on the server through TUI, in the browser through Web, on the phone through Weixin or QQ, and even on glasses through Rokid Glasses.
 
 ## News
 
-- `2026/03/24`: DeepScientist officially releases `v1.5`.
-- `2026/02/01`: the DeepScientist paper is available on [OpenReview](https://openreview.net/forum?id=cZFgsLq8Gs) for `ICLR 2026`.
+- `2026/03/24`: Uniresearch officially releases `v1.5`.
+- `2026/02/01`: the Uniresearch paper is available on [OpenReview](https://openreview.net/forum?id=cZFgsLq8Gs) for `ICLR 2026`.
 
 ## More From ResearAI
 
-AI Scientist and AutoFigure projects worth exploring alongside DeepScientist:
+AI Scientist and AutoFigure projects worth exploring alongside Uniresearch:
 
 | Project | What it does |
 |---|---|
@@ -31,7 +31,7 @@ This page is the shortest path to the right document.
 ## If you are new
 
 - [00 Quick Start](./00_QUICK_START.md)
-  Start here if you want to install DeepScientist, launch it locally, and create your first project.
+  Start here if you want to install Uniresearch, launch it locally, and create your first project.
 - [20 Workspace Modes Guide](./20_WORKSPACE_MODES_GUIDE.md)
   Read this if you want to choose correctly between Copilot and Autonomous before creating a project.
 - [19 Local Browser Auth](./19_LOCAL_BROWSER_AUTH.md)
@@ -39,9 +39,9 @@ This page is the shortest path to the right document.
 - [05 TUI Guide](./05_TUI_GUIDE.md)
   Read this if your main surface is the terminal and you want one end-to-end path through `ds --tui`, quests, connectors, and cross-surface work.
 - [15 Codex Provider Setup](./15_CODEX_PROVIDER_SETUP.md)
-  Read this when you want to run DeepScientist through MiniMax, GLM, Volcengine Ark, Alibaba Bailian Coding Plan, or another Codex profile.
+  Read this when you want to run Uniresearch through MiniMax, GLM, Volcengine Ark, Alibaba Bailian Coding Plan, or another Codex profile.
 - [21 Local Model Backends Guide](./21_LOCAL_MODEL_BACKENDS_GUIDE.md)
-  Read this if you want to run DeepScientist through local OpenAI-compatible backends such as vLLM, Ollama, or SGLang.
+  Read this if you want to run Uniresearch through local OpenAI-compatible backends such as vLLM, Ollama, or SGLang.
 - [12 Guided Workflow Tour](./12_GUIDED_WORKFLOW_TOUR.md)
   Follow the real product flow from landing page to workspace, step by step.
 - [02 Start Research Guide](./02_START_RESEARCH_GUIDE.md)
@@ -67,11 +67,11 @@ This page is the shortest path to the right document.
 - [18 Feishu Connector Guide](./18_FEISHU_CONNECTOR_GUIDE.md)
   Bind Feishu through the built-in long-connection runtime and continue quests from bot chats.
 - [10 Weixin Connector Guide](./10_WEIXIN_CONNECTOR_GUIDE.md)
-  Bind personal WeChat through DeepScientist's built-in QR login and iLink runtime.
+  Bind personal WeChat through Uniresearch's built-in QR login and iLink runtime.
 - [03 QQ Connector Guide](./03_QQ_CONNECTOR_GUIDE.md)
   Use QQ as a practical collaboration surface for progress, commands, and milestone delivery.
 - [04 Lingzhu Connector Guide](./04_LINGZHU_CONNECTOR_GUIDE.md)
-  Bind Lingzhu / Rokid Glasses to DeepScientist.
+  Bind Lingzhu / Rokid Glasses to Uniresearch.
 
 ## If you want to understand how the system works
 
@@ -97,7 +97,7 @@ This page is the shortest path to the right document.
 - [01 Settings Reference](./01_SETTINGS_REFERENCE.md)
   Check this if the problem is likely caused by config, credentials, or connector setup.
 
-## If you are developing DeepScientist
+## If you are developing Uniresearch
 
 - [90 Architecture](./90_ARCHITECTURE.md)
   High-level system contracts and repository structure.
@@ -109,5 +109,5 @@ This page is the shortest path to the right document.
 Welcome to join the WeChat group for discussion.
 
 <p align="center">
-  <img src="../../assets/readme/wechat4.jpg" alt="DeepScientist WeChat group" width="360" />
+  <img src="../../assets/readme/wechat4.jpg" alt="Uniresearch WeChat group" width="360" />
 </p>

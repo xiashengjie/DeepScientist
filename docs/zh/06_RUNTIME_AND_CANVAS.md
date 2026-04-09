@@ -1,6 +1,6 @@
 # 06 运行时与 Canvas：理解运行流程和图结构
 
-本文描述的是本仓库里 **DeepScientist Core 的当前实现行为**（以代码为准），而不是旧的架构草案。
+本文描述的是本仓库里 **Uniresearch Core 的当前实现行为**（以代码为准），而不是旧的架构草案。
 
 ## 1. 以哪些文件为准
 
@@ -9,15 +9,15 @@
 - Prompt / Skills
   - `src/prompts/system.md`
   - `src/skills/*/SKILL.md`
-  - `src/deepscientist/prompts/builder.py`
+  - `src/Uniresearch/prompts/builder.py`
 - 运行时与 API
-  - `src/deepscientist/daemon/app.py`
-  - `src/deepscientist/daemon/api/handlers.py`
-  - `src/deepscientist/daemon/api/router.py`
+  - `src/Uniresearch/daemon/app.py`
+  - `src/Uniresearch/daemon/api/handlers.py`
+  - `src/Uniresearch/daemon/api/router.py`
 - 任务状态 / Artifact / Memory
-  - `src/deepscientist/quest/service.py`
-  - `src/deepscientist/artifact/service.py`
-  - `src/deepscientist/memory/service.py`
+  - `src/Uniresearch/quest/service.py`
+  - `src/Uniresearch/artifact/service.py`
+  - `src/Uniresearch/memory/service.py`
 - 前端 Canvas（Lab）
   - `src/ui/src/lib/api/lab.ts`
   - `src/ui/src/lib/plugins/lab/components/LabQuestGraphCanvas.tsx`
@@ -111,7 +111,7 @@ daemon 维护 per-quest turn state（`running/pending/stop_requested`）。
 3. 若 `active_anchor` 是标准 skill：使用该 skill
 4. 否则 fallback 到 `decision`
 
-实现位置：`src/deepscientist/daemon/app.py` 的 `_turn_skill_for(...)`。
+实现位置：`src/Uniresearch/daemon/app.py` 的 `_turn_skill_for(...)`。
 
 ## 6. 现实：Anchor 推进不是强自动化的
 

@@ -1,13 +1,13 @@
-# 04 Lingzhu Connector Guide: Bind Rokid Glasses to DeepScientist
+# 04 Lingzhu Connector Guide: Bind Rokid Glasses to Uniresearch
 
 Lingzhu now uses a minimal one-step binding flow.
 
-DeepScientist serves the Lingzhu-compatible routes directly on its own daemon / web port:
+Uniresearch serves the Lingzhu-compatible routes directly on its own daemon / web port:
 
 - `GET /metis/agent/api/health`
 - `POST /metis/agent/api/sse`
 
-For a real device binding, the address registered on Rokid must be the public DeepScientist address that external devices can reach. It cannot be `127.0.0.1`, `localhost`, or a private-network address.
+For a real device binding, the address registered on Rokid must be the public Uniresearch address that external devices can reach. It cannot be `127.0.0.1`, `localhost`, or a private-network address.
 
 References:
 
@@ -18,8 +18,8 @@ References:
 
 Make sure:
 
-- DeepScientist is already running
-- the DeepScientist page you opened is the final public address that external devices should use
+- Uniresearch is already running
+- the Uniresearch page you opened is the final public address that external devices should use
 - if the current page is local-only or private-network-only, Lingzhu should not be saved yet
 
 ## 2. What the UI keeps now
@@ -52,7 +52,7 @@ Important details:
 
 - `Custom agent URL` is generated as `https://<your-public-address>/metis/agent/api/sse`
 - `AK` is generated automatically and reused after saving
-- the logo uses a PNG DeepScientist asset so it can be uploaded directly to Rokid
+- the logo uses a PNG Uniresearch asset so it can be uploaded directly to Rokid
 
 ![Rokid third-party agent creation form](../images/lingzhu/rokid-agent-platform-create.png)
 
@@ -63,8 +63,8 @@ On the Rokid platform:
 1. Open `Project Development -> Third-party Agent -> Create`
 2. Choose `Custom Agent`
 3. Copy each generated field from the popup into the matching Rokid field
-4. Upload the DeepScientist PNG logo
-5. Return to DeepScientist and click Save
+4. Upload the Uniresearch PNG logo
+5. Return to Uniresearch and click Save
 
 After Save, the Lingzhu binding is complete.
 
@@ -81,8 +81,8 @@ with:
 Usage rules:
 
 - a new task must start with `我现在的任务是 ...`
-- only the text after that prefix is treated as a fresh DeepScientist task
-- if you only want buffered progress, do not repeat the prefix; just say `找DeepScientist` or `继续`
+- only the text after that prefix is treated as a fresh Uniresearch task
+- if you only want buffered progress, do not repeat the prefix; just say `找Uniresearch` or `继续`
 
 ## 6. Common questions
 

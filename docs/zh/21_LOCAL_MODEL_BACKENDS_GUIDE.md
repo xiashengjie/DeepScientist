@@ -1,6 +1,6 @@
 # 21 本地模型后端指南：vLLM、Ollama 与 SGLang
 
-这篇文档说明如何通过 Codex，把 DeepScientist 接到本地 OpenAI-compatible 模型后端。
+这篇文档说明如何通过 Codex，把 Uniresearch 接到本地 OpenAI-compatible 模型后端。
 
 最关键的一点只有一句话：
 
@@ -12,11 +12,11 @@
 
 - 如果你的后端只有 chat 接口，仍然有机会通过 **Codex CLI `0.57.0`** 跑通
 - 这条旧路径通常需要使用顶层 `model_provider` / `model`，并把 `wire_api` 设为 `chat`
-- DeepScientist 现在会在 Codex 启动探测阶段自动检查这一点；只要发现当前生效 provider 使用的是 `wire_api = "chat"`，就会要求 `codex-cli 0.57.0` 才继续
+- Uniresearch 现在会在 Codex 启动探测阶段自动检查这一点；只要发现当前生效 provider 使用的是 `wire_api = "chat"`，就会要求 `codex-cli 0.57.0` 才继续
 
-## 1. DeepScientist 实际依赖的是什么
+## 1. Uniresearch 实际依赖的是什么
 
-DeepScientist 并不会直接和 vLLM、Ollama、SGLang 通信。
+Uniresearch 并不会直接和 vLLM、Ollama、SGLang 通信。
 
 它真正依赖的是：
 
@@ -28,9 +28,9 @@ DeepScientist 并不会直接和 vLLM、Ollama、SGLang 通信。
 1. 你的本地模型后端
 2. Codex profile
 3. Codex 启动探测
-4. DeepScientist runner
+4. Uniresearch runner
 
-如果第 2 步或第 3 步过不了，DeepScientist 就无法正常启动 Codex runner。
+如果第 2 步或第 3 步过不了，Uniresearch 就无法正常启动 Codex runner。
 
 ## 2. 当前 Codex 必须知道的限制
 
@@ -55,7 +55,7 @@ DeepScientist 并不会直接和 vLLM、Ollama、SGLang 通信。
 
 ## 3. 先直接测试后端
 
-在动 DeepScientist 之前，先直接验证后端。
+在动 Uniresearch 之前，先直接验证后端。
 
 ### 第一步：列模型
 
@@ -119,7 +119,7 @@ curl http://127.0.0.1:8004/v1/responses \
 
 - 它可以响应原始 chat 请求
 - 但它目前不能直接给最新版 Codex runner 使用
-- 因而 DeepScientist 也不能通过正常 Codex 路径使用它
+- 因而 Uniresearch 也不能通过正常 Codex 路径使用它
 
 我们还额外做了旧版 Codex 对照测试：
 
@@ -157,7 +157,7 @@ Reply with exactly HELLO.
 EOF
 ```
 
-如果这一步过不了，就先不要继续尝试 DeepScientist。
+如果这一步过不了，就先不要继续尝试 Uniresearch。
 
 ## 5.1 只支持 chat 时，回退到 Codex `0.57.0`
 
@@ -192,9 +192,9 @@ Reply with exactly HELLO.
 EOF
 ```
 
-如果这条旧版 Codex 路径能通过，DeepScientist 通常也可以沿用同样的 runner binary 和 provider 思路。
+如果这条旧版 Codex 路径能通过，Uniresearch 通常也可以沿用同样的 runner binary 和 provider 思路。
 
-## 6. Codex 成功后，再测试 DeepScientist
+## 6. Codex 成功后，再测试 Uniresearch
 
 只有当上面的 `codex exec` 能通过时，再继续：
 
@@ -266,7 +266,7 @@ codex:
 3. 回退到 Codex `0.57.0` 并使用 `wire_api = "chat"`
 4. 在后端前面加一层 Responses-compatible 代理
 
-这里的问题本质上是 Codex CLI 的当前要求，不是 DeepScientist 单独某个配置写错了。
+这里的问题本质上是 Codex CLI 的当前要求，不是 Uniresearch 单独某个配置写错了。
 
 ## 9. 推荐的实际顺序
 
@@ -278,4 +278,4 @@ codex:
 4. 再测 `ds doctor --codex-profile <name>`
 5. 最后再启动 `ds --codex-profile <name>`
 
-如果第 2 步失败，就先停在那里。不要期待最新版 Codex 路径下的 DeepScientist 可以正常工作。
+如果第 2 步失败，就先停在那里。不要期待最新版 Codex 路径下的 Uniresearch 可以正常工作。

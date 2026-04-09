@@ -1,14 +1,14 @@
-# 01 设置参考：如何配置 DeepScientist
+# 01 设置参考：如何配置 Uniresearch
 
-本手册对应当前 DeepScientist `Settings` 页面与其实际落盘配置，写法参考 PyTorch API reference 的“摘要 + 参数 + 默认值 + 行为影响 + 示例”风格。它不是泛泛的产品介绍，而是面向实际配置、排障与日常运维的字段级参考。
+本手册对应当前 Uniresearch `Settings` 页面与其实际落盘配置，写法参考 PyTorch API reference 的“摘要 + 参数 + 默认值 + 行为影响 + 示例”风格。它不是泛泛的产品介绍，而是面向实际配置、排障与日常运维的字段级参考。
 
 相关实现来源：
 
 - `src/ui/src/components/settings/settingsFormCatalog.ts`
 - `src/ui/src/components/settings/connectorCatalog.ts`
 - `src/ui/src/components/settings/RegistrySettingsForm.tsx`
-- `src/deepscientist/config/models.py`
-- `src/deepscientist/config/service.py`
+- `src/Uniresearch/config/models.py`
+- `src/Uniresearch/config/service.py`
 
 ## 总览
 
@@ -16,11 +16,11 @@
 
 | 文件 | 页面分类 | 作用 |
 | --- | --- | --- |
-| `~/DeepScientist/config/config.yaml` | Runtime | 运行时主配置：主目录、daemon、UI、日志、Git、技能同步、云链接、ACP 等 |
-| `~/DeepScientist/config/runners.yaml` | Models | Runner 配置：`codex` / `claude` 的二进制、模型、审批策略、沙箱与重试策略 |
-| `~/DeepScientist/config/connectors.yaml` | Connectors | QQ、Telegram、Discord、Slack、Feishu、WhatsApp、Lingzhu 等连接器配置 |
-| `~/DeepScientist/config/plugins.yaml` | Extensions | 插件发现、启用、禁用与信任策略 |
-| `~/DeepScientist/config/mcp_servers.yaml` | MCP | 外部 MCP 服务，不包含内置 `memory`、`artifact`、`bash_exec` |
+| `~/Uniresearch/config/config.yaml` | Runtime | 运行时主配置：主目录、daemon、UI、日志、Git、技能同步、云链接、ACP 等 |
+| `~/Uniresearch/config/runners.yaml` | Models | Runner 配置：`codex` / `claude` 的二进制、模型、审批策略、沙箱与重试策略 |
+| `~/Uniresearch/config/connectors.yaml` | Connectors | QQ、Telegram、Discord、Slack、Feishu、WhatsApp、Lingzhu 等连接器配置 |
+| `~/Uniresearch/config/plugins.yaml` | Extensions | 插件发现、启用、禁用与信任策略 |
+| `~/Uniresearch/config/mcp_servers.yaml` | MCP | 外部 MCP 服务，不包含内置 `memory`、`artifact`、`bash_exec` |
 
 页面上的几个动作语义如下：
 
@@ -37,12 +37,12 @@
 
 ### 摘要
 
-`config.yaml` 是 DeepScientist 的主运行时配置文件，控制主目录、默认语言、daemon 行为、Web/TUI 地址、日志、Git、技能同步，以及少量可选的 cloud / ACP 兼容设置。
+`config.yaml` 是 Uniresearch 的主运行时配置文件，控制主目录、默认语言、daemon 行为、Web/TUI 地址、日志、Git、技能同步，以及少量可选的 cloud / ACP 兼容设置。
 
 ### 结构
 
 ```yaml
-home: ~/DeepScientist
+home: ~/Uniresearch
 default_runner: codex
 default_locale: en-US # 或 zh-CN，首次打开 Web 时会按浏览器语言初始化
 daemon:
@@ -82,13 +82,13 @@ connectors:
   direct_chat_enabled: true
 cloud:
   enabled: false
-  base_url: https://deepscientist.cc
+  base_url: https://Uniresearch.cc
   token: null
-  token_env: DEEPSCIENTIST_TOKEN
+  token_env: Uniresearch_TOKEN
   verify_token_on_start: false
   sync_mode: disabled
 acp:
-  compatibility_profile: deepscientist-acp-compat/v1
+  compatibility_profile: Uniresearch-acp-compat/v1
   events_transport: rest-poll
   sdk_bridge_enabled: false
   sdk_module: acp
@@ -99,11 +99,11 @@ acp:
 **`home`**
 
 - 类型：`string`
-- 默认值：安装时的 DeepScientist 主目录，通常为 `~/DeepScientist`
+- 默认值：安装时的 Uniresearch 主目录，通常为 `~/Uniresearch`
 - 页面标签：`Home path`
 - 作用：这是配置、项目、memory、plugins、logs、cache 的根路径。
 - 何时修改：仅在你明确使用自定义安装目录时修改。
-- 注意事项：这不是单个项目路径，而是整个 DeepScientist 的运行时根目录。
+- 注意事项：这不是单个项目路径，而是整个 Uniresearch 的运行时根目录。
 
 **`default_runner`**
 
@@ -123,7 +123,7 @@ acp:
 - 页面标签：`Default locale`
 - 作用：影响系统 prompt 与运行时文案默认使用的语言。
 - 何时修改：希望整个系统固定偏向中文或英文时修改。
-- 注意事项：第一次浏览器初始化完成后，如果你在 `Settings` 手动修改这里，DeepScientist 会把它视为用户显式选择，后续不再自动跟随浏览器覆盖。
+- 注意事项：第一次浏览器初始化完成后，如果你在 `Settings` 手动修改这里，Uniresearch 会把它视为用户显式选择，后续不再自动跟随浏览器覆盖。
 
 ### Daemon policy
 
@@ -267,7 +267,7 @@ acp:
   - `src/skills/experiment/SKILL.md`
   - `src/skills/analysis-campaign/SKILL.md`
   - `src/skills/write/SKILL.md`
-- DeepScientist 统一使用固定的莫兰迪配色指引，而不是每台机器各自配置。
+- Uniresearch 统一使用固定的莫兰迪配色指引，而不是每台机器各自配置。
 - 具体的长期参考页为 `docs/zh/08_FIGURE_STYLE_GUIDE.md`。
 - 如果需要调整默认视觉语言，应修改 prompt / skill 合同，而不是再新增设置项。
 
@@ -294,12 +294,12 @@ acp:
 - 默认值：`true`
 - 页面标签：`Sync project skills on open`
 - 作用：打开已有项目时刷新本地技能镜像。
-- Prompt 说明：会刷新当前 DeepScientist home 下已发现 quest 的本地技能与 prompt 镜像。
+- Prompt 说明：会刷新当前 Uniresearch home 下已发现 quest 的本地技能与 prompt 镜像。
 
 受管 prompt 行为：
 
 - `.codex/prompts/` 现在应被视为“当前 active prompt 树”的受管副本，而不是长期手工维护的 override。
-- 每次真实 runner turn 开始前，DeepScientist 都会把 quest 本地 active prompt 树和仓库当前 `src/prompts/` 做比较，并自动修复漂移。
+- 每次真实 runner turn 开始前，Uniresearch 都会把 quest 本地 active prompt 树和仓库当前 `src/prompts/` 做比较，并自动修复漂移。
 - 如果 active prompt 树与仓库源不同，系统会先把旧树备份到 `.codex/prompt_versions/<backup_id>/`，再写入新的 active 副本。
 - 这个运行前同步是针对“本次 turn 实际使用的 quest_root”执行的，所以即使 quest 不在默认 `home/quests` 下面，也仍然会更新。
 - 运行时覆盖：`ds daemon --prompt-version latest` 使用当前受管 active prompt；`ds daemon --prompt-version <official_version>` 会优先选择该正式版本号下最新的一份 prompt 备份。
@@ -309,7 +309,7 @@ acp:
 受管 auto-continue 行为：
 
 - `workspace_mode = copilot`
-  - 完成当前请求单元后，DeepScientist 通常停驻，等待下一条用户消息或 `/resume`
+  - 完成当前请求单元后，Uniresearch 通常停驻，等待下一条用户消息或 `/resume`
 - `workspace_mode = autonomous`
   - 如果真实外部长任务还没跑起来，就继续用后续 turns 做准备、启动或耐久路由
   - 一旦真实外部长任务已经在跑，auto-continue 就切成低频巡检，默认大约每 `240` 秒一轮
@@ -355,7 +355,7 @@ acp:
 **`cloud.base_url`**
 
 - 类型：`string`
-- 默认值：`https://deepscientist.cc`
+- 默认值：`https://Uniresearch.cc`
 - 页面标签：`Cloud base URL`
 - 作用：云服务基础地址。
 
@@ -370,7 +370,7 @@ acp:
 **`cloud.token_env`**
 
 - 类型：`string`
-- 默认值：`DEEPSCIENTIST_TOKEN`
+- 默认值：`Uniresearch_TOKEN`
 - 页面标签：`Cloud token env var`
 - 作用：声明环境变量名，让运行时从环境变量中读取 token。
 
@@ -397,7 +397,7 @@ acp:
 **`acp.compatibility_profile`**
 
 - 类型：`string`
-- 默认值：`deepscientist-acp-compat/v1`
+- 默认值：`Uniresearch-acp-compat/v1`
 - 页面标签：`Compatibility profile`
 - 作用：给外部 ACP 消费端看的兼容配置名。
 
@@ -479,8 +479,8 @@ claude:
 - `Test` 行为：检查该二进制是否在 `PATH` 上。
 - `codex` 的解析顺序：环境变量覆盖、显式路径、本机 `PATH`、最后才是 bundled fallback。
 - 临时使用说明：你也可以直接用 `ds --codex /absolute/path/to/codex` 临时覆盖这里的设置。
-- 首次使用说明：DeepScientist 不会替你完成 Codex 认证。第一次运行 `ds` 前，必须先确保 `codex login`（或直接运行 `codex`）已经成功完成。
-- 修复说明：如果执行 `npm install -g @researai/deepscientist` 之后 bundled Codex 依赖仍然缺失，请显式安装 `npm install -g @openai/codex`。
+- 首次使用说明：Uniresearch 不会替你完成 Codex 认证。第一次运行 `ds` 前，必须先确保 `codex login`（或直接运行 `codex`）已经成功完成。
+- 修复说明：如果执行 `npm install -g @researai/Uniresearch` 之后 bundled Codex 依赖仍然缺失，请显式安装 `npm install -g @openai/codex`。
 
 **`config_dir`**
 
@@ -505,7 +505,7 @@ claude:
 - 默认值：`codex=gpt-5.4`，`claude=inherit`
 - 页面标签：`Default model`
 - 作用：项目和单次请求没有覆盖时的默认模型。
-- 启动说明：DeepScientist 的 Codex 就绪探测会优先使用这里配置的模型。如果你的 Codex 账号无法访问它，DeepScientist 会自动回退到当前 Codex 默认模型，并持久化为 `model: inherit`。
+- 启动说明：Uniresearch 的 Codex 就绪探测会优先使用这里配置的模型。如果你的 Codex 账号无法访问它，Uniresearch 会自动回退到当前 Codex 默认模型，并持久化为 `model: inherit`。
 - provider-profile 说明：当 `profile` 已设置时，通常推荐使用 `model: inherit`，让 Codex profile 自己决定 provider 侧模型。
 
 **`model_reasoning_effort`**
@@ -516,7 +516,7 @@ claude:
 - 允许值：`""`、`minimal`、`low`、`medium`、`high`、`xhigh`
 - 作用：默认推理强度。
 - 推荐：当前仓库的 Codex 默认就是 `xhigh`。
-- 兼容性说明：当 DeepScientist 检测到 Codex CLI 低于 `0.63.0` 时，会在启动探测和实际 runner 命令里自动把 `xhigh` 降级成 `high`。这也覆盖了 MiniMax 当前推荐的 `@openai/codex@0.57.0` 路径。
+- 兼容性说明：当 Uniresearch 检测到 Codex CLI 低于 `0.63.0` 时，会在启动探测和实际 runner 命令里自动把 `xhigh` 降级成 `high`。这也覆盖了 MiniMax 当前推荐的 `@openai/codex@0.57.0` 路径。
 
 **`approval_policy`**
 
@@ -547,7 +547,7 @@ claude:
   - 默认会显示 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY`
   - 修改后不会自动保存，需要手动点击 `Save env vars`
   - 空值会被忽略，不会注入到 Codex 进程
-- 作用：DeepScientist 启动 Codex run 时，额外传入给 Codex 的环境变量。
+- 作用：Uniresearch 启动 Codex run 时，额外传入给 Codex 的环境变量。
 - 常见用途：需要 API Key 或自定义 Base URL 的 provider-backed Codex 配置。
 
 **`retry_on_failure`**
@@ -563,7 +563,7 @@ claude:
 - 默认值：`5`
 - 页面标签：`Max attempts`
 - 作用：一个 turn 的最大尝试次数上限。
-- 注意事项：DeepScientist 运行时会把该值硬限制在最多 `5`。
+- 注意事项：Uniresearch 运行时会把该值硬限制在最多 `5`。
 
 **`retry_initial_backoff_sec`**
 
@@ -702,7 +702,7 @@ claude:
 **`bot_name`**
 
 - 类型：`string`
-- 默认值：`DeepScientist`
+- 默认值：`Uniresearch`
 - 作用：本地显示名称。
 
 **`bot_token`**
@@ -884,7 +884,7 @@ legacy 字段：
 **`session_dir`**
 
 - 类型：`string`
-- 默认值：`~/.deepscientist/connectors/whatsapp`
+- 默认值：`~/.Uniresearch/connectors/whatsapp`
 - 作用：本地 WhatsApp 会话状态目录。
 
 **`command_prefix`**
@@ -912,9 +912,9 @@ legacy Meta Cloud 字段：
 
 ### `qq`
 
-摘要：QQ 在 DeepScientist 中是一级 connector，主路径就是 `gateway_direct`，不需要公网 callback。
+摘要：QQ 在 Uniresearch 中是一级 connector，主路径就是 `gateway_direct`，不需要公网 callback。
 
-快速上手：参见 [《03 QQ 连接器指南：如何用 QQ 与 DeepScientist 沟通》](./03_QQ_CONNECTOR_GUIDE.md)。
+快速上手：参见 [《03 QQ 连接器指南：如何用 QQ 与 Uniresearch 沟通》](./03_QQ_CONNECTOR_GUIDE.md)。
 
 推荐路径：
 
@@ -935,7 +935,7 @@ legacy Meta Cloud 字段：
 **`bot_name`**
 
 - 类型：`string`
-- 默认值：`DeepScientist`
+- 默认值：`Uniresearch`
 - 作用：QQ 连接器在本地 UI 与消息中的显示名。
 
 **`app_id`**
@@ -1035,7 +1035,7 @@ legacy Meta Cloud 字段：
 
 ```yaml
 load_paths:
-  - ~/DeepScientist/plugins
+  - ~/Uniresearch/plugins
 enabled: []
 disabled: []
 allow_unsigned: false
@@ -1046,7 +1046,7 @@ allow_unsigned: false
 **`load_paths`**
 
 - 类型：`list[string]`
-- 默认值：`[~/DeepScientist/plugins]`
+- 默认值：`[~/Uniresearch/plugins]`
 - 页面标签：`Load paths`
 - 作用：扫描本地插件包的目录列表。
 

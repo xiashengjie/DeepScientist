@@ -1,14 +1,14 @@
-# 13 Core Architecture Guide: How DeepScientist Fits Together
+# 13 Core Architecture Guide: How Uniresearch Fits Together
 
 This is the user-facing architecture guide.
 
-Use it when you want to understand how DeepScientist is organized without reading the maintainer-only architecture reference line by line.
+Use it when you want to understand how Uniresearch is organized without reading the maintainer-only architecture reference line by line.
 
 If you are maintaining the repository itself, also read [90 Architecture](./90_ARCHITECTURE.md) and [91 Development](./91_DEVELOPMENT.md).
 
 ## 1. One-sentence summary
 
-DeepScientist is a local-first research operating system where:
+Uniresearch is a local-first research operating system where:
 
 - the public launcher is `npm` + `ds`
 - the authoritative runtime is Python
@@ -18,7 +18,7 @@ DeepScientist is a local-first research operating system where:
 
 ## 2. Main entrypoints
 
-DeepScientist has four practical entrypoints:
+Uniresearch has four practical entrypoints:
 
 1. the `ds` command
 2. the web workspace
@@ -65,7 +65,7 @@ They let the same quest send or receive messages outside the browser.
 
 The normal launch chain is:
 
-1. `npm install -g @researai/deepscientist`
+1. `npm install -g @researai/Uniresearch`
 2. run `ds`
 3. `bin/ds.js` prepares the runtime environment
 4. the Python daemon starts
@@ -79,7 +79,7 @@ The key design choice is:
 
 ## 4. Runtime home
 
-By default, DeepScientist uses `~/DeepScientist/` as its runtime home.
+By default, Uniresearch uses `~/Uniresearch/` as its runtime home.
 
 Important directories inside it are:
 
@@ -101,11 +101,11 @@ What they mean:
 
 ## 5. One quest equals one Git repository
 
-This is one of the most important DeepScientist ideas.
+This is one of the most important Uniresearch ideas.
 
 Every quest lives in its own directory:
 
-`~/DeepScientist/quests/<quest_id>/`
+`~/Uniresearch/quests/<quest_id>/`
 
 That directory is its own Git repository.
 
@@ -121,7 +121,7 @@ It is a durable local workspace with:
 - memory
 - shell history
 
-This is why DeepScientist can behave like a persistent research map instead of a disposable conversation.
+This is why Uniresearch can behave like a persistent research map instead of a disposable conversation.
 
 ## 6. What `Start Research` actually creates
 
@@ -161,7 +161,7 @@ The important detail is:
 
 ## 8. Prompt-led and skill-led workflow
 
-DeepScientist does not primarily rely on a giant hard-coded stage scheduler.
+Uniresearch does not primarily rely on a giant hard-coded stage scheduler.
 
 Instead, workflow discipline mainly comes from:
 
@@ -179,7 +179,7 @@ This keeps the runtime thinner and makes behavior easier to evolve through promp
 
 ## 9. The three built-in MCP namespaces
 
-DeepScientist keeps its built-in MCP surface intentionally small:
+Uniresearch keeps its built-in MCP surface intentionally small:
 
 - `memory`
 - `artifact`
@@ -223,7 +223,7 @@ Use `bash_exec` for durable shell work:
 - consume queued inbound user messages
 - keep the interaction thread continuous across long runs
 
-This is one reason DeepScientist can support long-running work without losing the collaboration thread.
+This is one reason Uniresearch can support long-running work without losing the collaboration thread.
 
 ## 11. How the web workspace is built from durable state
 
@@ -267,7 +267,7 @@ The quest repository and daemon still remain the source of truth.
 
 ## 14. Why the system can keep growing
 
-DeepScientist can accumulate progress across rounds because it stores state in durable forms:
+Uniresearch can accumulate progress across rounds because it stores state in durable forms:
 
 - quest files
 - Git branches and commits

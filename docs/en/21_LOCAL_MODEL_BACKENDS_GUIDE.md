@@ -1,6 +1,6 @@
 # 21 Local Model Backends Guide: vLLM, Ollama, and SGLang
 
-This guide explains how to run DeepScientist against a local OpenAI-compatible model backend through Codex.
+This guide explains how to run Uniresearch against a local OpenAI-compatible model backend through Codex.
 
 The key point is simple:
 
@@ -12,11 +12,11 @@ There is one practical fallback:
 
 - if your backend is chat-only, you may still be able to use it through **Codex CLI `0.57.0`**
 - that older path can still work with `wire_api = "chat"` when the provider is configured at the top level
-- DeepScientist now checks this automatically during the Codex startup probe; if it sees `wire_api = "chat"` on any active provider config, it requires `codex-cli 0.57.0` before continuing
+- Uniresearch now checks this automatically during the Codex startup probe; if it sees `wire_api = "chat"` on any active provider config, it requires `codex-cli 0.57.0` before continuing
 
-## 1. What DeepScientist actually depends on
+## 1. What Uniresearch actually depends on
 
-DeepScientist does not talk to vLLM, Ollama, or SGLang directly.
+Uniresearch does not talk to vLLM, Ollama, or SGLang directly.
 
 It talks to:
 
@@ -28,9 +28,9 @@ So the compatibility chain is:
 1. your local backend
 2. Codex profile
 3. Codex startup probe
-4. DeepScientist runner
+4. Uniresearch runner
 
-If step 2 or step 3 fails, DeepScientist cannot start the Codex runner successfully.
+If step 2 or step 3 fails, Uniresearch cannot start the Codex runner successfully.
 
 ## 2. The current Codex rule you must know
 
@@ -55,7 +55,7 @@ In practice that means:
 
 ## 3. Test the backend first
 
-Before touching DeepScientist, verify the backend directly.
+Before touching Uniresearch, verify the backend directly.
 
 ### Step 1: list models
 
@@ -119,7 +119,7 @@ That means:
 
 - it can answer raw chat requests
 - but it cannot currently be used by the latest Codex runner
-- and therefore DeepScientist cannot use it through the normal Codex path
+- and therefore Uniresearch cannot use it through the normal Codex path
 
 We also tested an older Codex path:
 
@@ -157,7 +157,7 @@ Reply with exactly HELLO.
 EOF
 ```
 
-If this fails, do not continue to DeepScientist yet.
+If this fails, do not continue to Uniresearch yet.
 
 ## 5.1 Chat-only fallback for Codex `0.57.0`
 
@@ -192,9 +192,9 @@ Reply with exactly HELLO.
 EOF
 ```
 
-If this older Codex path works, DeepScientist can usually reuse it with the same runner binary and profile strategy.
+If this older Codex path works, Uniresearch can usually reuse it with the same runner binary and profile strategy.
 
-## 6. DeepScientist commands after Codex works
+## 6. Uniresearch commands after Codex works
 
 Once the direct Codex check works, run:
 
@@ -207,7 +207,7 @@ ds --codex-profile local_vllm
 
 `ds docker` is only a legacy alias for `ds doctor`; it is not a Docker deployment command.
 
-If you want to persist it in DeepScientist:
+If you want to persist it in Uniresearch:
 
 ```yaml
 codex:
@@ -233,7 +233,7 @@ Use it when:
 - `/v1/responses` works
 - the model id is visible and stable
 
-If those are true, vLLM is the cleanest current local path for Codex + DeepScientist.
+If those are true, vLLM is the cleanest current local path for Codex + Uniresearch.
 
 ### Ollama
 
@@ -268,7 +268,7 @@ If your backend only supports `/v1/chat/completions`, you currently have three p
 3. downgrade the Codex CLI path to `0.57.0` and use `wire_api = "chat"`
 4. place a Responses-compatible proxy in front of the backend
 
-Right now, this is a Codex CLI limitation, not a DeepScientist-only setting mistake.
+Right now, this is a Codex CLI limitation, not a Uniresearch-only setting mistake.
 
 ## 9. Recommended workflow
 
@@ -280,4 +280,4 @@ Use this order every time:
 4. test `ds doctor --codex-profile <name>`
 5. only then launch `ds --codex-profile <name>`
 
-If step 2 fails, stop there. Do not expect DeepScientist to succeed through the latest Codex path.
+If step 2 fails, stop there. Do not expect Uniresearch to succeed through the latest Codex path.

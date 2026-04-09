@@ -322,7 +322,7 @@ This is the main public knob for round depth.
 
 Practical note on workspace mode:
 
-- DeepScientist also distinguishes a user-directed `copilot` workspace mode from the default `autonomous` mode.
+- Uniresearch also distinguishes a user-directed `copilot` workspace mode from the default `autonomous` mode.
 - In `copilot`, completing the current requested unit should normally park and wait for the next user message or `/resume`.
 - In `autonomous`, the quest should not park just because no long-running task is active yet; it should keep pushing toward the next real long-running unit of work.
 
@@ -581,7 +581,7 @@ When changing `Start Research`, update together:
 - `src/ui/src/lib/startResearch.ts`
 - `src/ui/src/components/projects/CreateProjectDialog.tsx`
 - `src/prompts/system.md` if runtime interpretation changes
-- `src/deepscientist/prompts/builder.py` if prompt routing changes
+- `src/Uniresearch/prompts/builder.py` if prompt routing changes
 - this document
 - `docs/zh/02_START_RESEARCH_GUIDE.md`
 - related tests in `tests/test_prompt_builder.py` and `tests/test_stage_skills.py`

@@ -1,6 +1,6 @@
-# DeepScientist 阿里云 Serverless 部署指南
+# Uniresearch 阿里云 Serverless 部署指南
 
-本文档详细说明如何在阿里云 Serverless 平台上部署 DeepScientist。
+本文档详细说明如何在阿里云 Serverless 平台上部署 Uniresearch。
 
 ## 目录
 
@@ -15,7 +15,7 @@
 
 ## 部署方案选择
 
-阿里云 Serverless 提供多种部署方式，针对 DeepScientist 的特点：
+阿里云 Serverless 提供多种部署方式，针对 Uniresearch 的特点：
 
 | 方案 | 适用场景 | 优点 | 缺点 |
 |------|----------|------|------|
@@ -23,7 +23,7 @@
 | **ECI 弹性容器实例** | 简单部署、灵活配置 | 开箱即用、按量付费 | 缺少编排能力 |
 | **函数计算 FC** | 事件驱动、短时任务 | 极低成本 | 有运行时间限制，不适合长期服务 |
 
-**推荐方案**：ACK Serverless 或 ECI（DeepScientist 是长期运行的服务）
+**推荐方案**：ACK Serverless 或 ECI（Uniresearch 是长期运行的服务）
 
 ---
 
@@ -45,7 +45,7 @@
 2. 点击 **集群** → **创建集群**
 3. 选择 **ACK Serverless** 类型
 4. 配置集群：
-   - 集群名称：`deepscientist-cluster`
+   - 集群名称：`Uniresearch-cluster`
    - 地域：选择离您最近的地域（如华东2上海）
    - 专有网络：新建或选择已有 VPC
    - 交换机：选择或创建交换机
@@ -62,7 +62,7 @@ aliyun configure
 
 # 创建 ACK Serverless 集群
 aliyun cs CreateManagedKubernetesCluster \
-  --Name deepscientist-cluster \
+  --Name Uniresearch-cluster \
   --RegionId cn-shanghai \
   --VpcId vpc-xxxxxx \
   --VSwitchIds '["vsw-xxxxxx"]' \
@@ -76,15 +76,15 @@ aliyun cs CreateManagedKubernetesCluster \
 ```bash
 # 创建命名空间
 aliyun cr CreateNamespace \
-  --NamespaceName deepscientist \
+  --NamespaceName Uniresearch \
   --NamespacePublic false
 
 # 创建镜像仓库
 aliyun cr CreateRepository \
-  --RepoNamespace deepscientist \
-  --RepoName deepscientist \
+  --RepoNamespace Uniresearch \
+  --RepoName Uniresearch \
   --RepoType PRIVATE \
-  --Summary "DeepScientist autonomous research studio"
+  --Summary "Uniresearch autonomous research studio"
 ```
 
 #### 推送镜像
@@ -94,10 +94,10 @@ aliyun cr CreateRepository \
 docker login --username=your_username registry.cn-shanghai.aliyuncs.com
 
 # 标记镜像
-docker tag deepscientist:latest registry.cn-shanghai.aliyuncs.com/deepscientist/deepscientist:latest
+docker tag Uniresearch:latest registry.cn-shanghai.aliyuncs.com/Uniresearch/Uniresearch:latest
 
 # 推送镜像
-docker push registry.cn-shanghai.aliyuncs.com/deepscientist/deepscientist:latest
+docker push registry.cn-shanghai.aliyuncs.com/Uniresearch/Uniresearch:latest
 ```
 
 ### 1.4 创建 NAS 存储卷
@@ -111,7 +111,7 @@ aliyun nas CreateFileSystem \
   --StorageType Performance \
   --RegionId cn-shanghai \
   --ZoneId cn-shanghai-a \
-  --Description "DeepScientist data storage"
+  --Description "Uniresearch data storage"
 
 # 记录返回的 FileSystemId
 ```
@@ -124,7 +124,7 @@ aliyun nas CreateFileSystem \
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: deepscientist-nas-pv
+  name: Uniresearch-nas-pv
 spec:
   capacity:
     storage: 100Gi
@@ -134,14 +134,14 @@ spec:
   flexVolume:
     driver: alicloud/nas
     options:
-      server: "your-nas-server.cn-shanghai.nas.aliyuncs.com:/deepscientist"
+      server: "your-nas-server.cn-shanghai.nas.aliyuncs.com:/Uniresearch"
       path: "/"
       vers: "4.0"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: deepscientist-nas-pvc
+  name: Uniresearch-nas-pvc
 spec:
   accessModes:
     - ReadWriteMany
@@ -155,9 +155,9 @@ spec:
 
 ```bash
 # 创建 Secret 存储 API Key
-kubectl create secret generic deepscientist-secrets \
+kubectl create secret generic Uniresearch-secrets \
   --from-literal=VOLCENGINE_ARK_API_KEY=your_api_key_here \
-  --from-literal=DEEPSCIENTIST_CODEX_PROFILE=ark
+  --from-literal=Uniresearch_CODEX_PROFILE=ark
 ```
 
 ### 1.6 创建部署配置
@@ -168,38 +168,38 @@ kubectl create secret generic deepscientist-secrets \
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: deepscientist
+  name: Uniresearch
   labels:
-    app: deepscientist
+    app: Uniresearch
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: deepscientist
+      app: Uniresearch
   template:
     metadata:
       labels:
-        app: deepscientist
+        app: Uniresearch
     spec:
       containers:
-      - name: deepscientist
-        image: registry.cn-shanghai.aliyuncs.com/deepscientist/deepscientist:latest
+      - name: Uniresearch
+        image: registry.cn-shanghai.aliyuncs.com/Uniresearch/Uniresearch:latest
         ports:
         - containerPort: 20999
           protocol: TCP
         env:
-        - name: DEEPSCIENTIST_HOME
-          value: /home/deepscientist/DeepScientist
+        - name: Uniresearch_HOME
+          value: /home/Uniresearch/Uniresearch
         - name: VOLCENGINE_ARK_API_KEY
           valueFrom:
             secretKeyRef:
-              name: deepscientist-secrets
+              name: Uniresearch-secrets
               key: VOLCENGINE_ARK_API_KEY
-        - name: DEEPSCIENTIST_CODEX_PROFILE
+        - name: Uniresearch_CODEX_PROFILE
           valueFrom:
             secretKeyRef:
-              name: deepscientist-secrets
-              key: DEEPSCIENTIST_CODEX_PROFILE
+              name: Uniresearch-secrets
+              key: Uniresearch_CODEX_PROFILE
         resources:
           requests:
             cpu: "1"
@@ -209,9 +209,9 @@ spec:
             memory: "8Gi"
         volumeMounts:
         - name: data-volume
-          mountPath: /home/deepscientist/DeepScientist
+          mountPath: /home/Uniresearch/Uniresearch
         - name: codex-config
-          mountPath: /home/deepscientist/.codex
+          mountPath: /home/Uniresearch/.codex
         livenessProbe:
           httpGet:
             path: /api/health
@@ -229,14 +229,14 @@ spec:
       volumes:
       - name: data-volume
         persistentVolumeClaim:
-          claimName: deepscientist-nas-pvc
+          claimName: Uniresearch-nas-pvc
       - name: codex-config
         emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: deepscientist-service
+  name: Uniresearch-service
   annotations:
     service.beta.kubernetes.io/alibaba-cloud-loadbalancer-spec: "slb.s1.small"
 spec:
@@ -247,17 +247,17 @@ spec:
     targetPort: 20999
     protocol: TCP
   selector:
-    app: deepscientist
+    app: Uniresearch
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: deepscientist-hpa
+  name: Uniresearch-hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: deepscientist
+    name: Uniresearch
   minReplicas: 1
   maxReplicas: 3
   metrics:
@@ -285,11 +285,11 @@ aliyun cs GET /k8s/$cluster_id/user_config | kubeconfig
 kubectl apply -f deployment.yaml
 
 # 查看部署状态
-kubectl get pods -l app=deepscientist
-kubectl get svc deepscientist-service
+kubectl get pods -l app=Uniresearch
+kubectl get svc Uniresearch-service
 
 # 查看日志
-kubectl logs -l app=deepscientist -f
+kubectl logs -l app=Uniresearch -f
 ```
 
 ### 1.8 配置域名和 HTTPS
@@ -300,7 +300,7 @@ kubectl logs -l app=deepscientist -f
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: deepscientist-ingress
+  name: Uniresearch-ingress
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
@@ -308,17 +308,17 @@ spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - deepscientist.yourdomain.com
-    secretName: deepscientist-tls
+    - Uniresearch.yourdomain.com
+    secretName: Uniresearch-tls
   rules:
-  - host: deepscientist.yourdomain.com
+  - host: Uniresearch.yourdomain.com
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: deepscientist-service
+            name: Uniresearch-service
             port:
               number: 80
 ```
@@ -340,7 +340,7 @@ spec:
 1. 登录 [ECI 控制台](https://eci.console.aliyun.com/)
 2. 点击 **创建容器组**
 3. 配置容器组：
-   - 名称：`deepscientist`
+   - 名称：`Uniresearch`
    - 地域：华东2（上海）
    - 交换机：选择已创建的交换机
    - 安全组：选择或创建安全组（开放 20999 端口）
@@ -351,14 +351,14 @@ spec:
 
 ```json
 {
-  "ContainerGroupName": "deepscientist",
+  "ContainerGroupName": "Uniresearch",
   "RegionId": "cn-shanghai",
   "SecurityGroupId": "sg-xxxxxx",
   "VSwitchId": "vsw-xxxxxx",
   "Container": [
     {
-      "Name": "deepscientist",
-      "Image": "registry.cn-shanghai.aliyuncs.com/deepscientist/deepscientist:latest",
+      "Name": "Uniresearch",
+      "Image": "registry.cn-shanghai.aliyuncs.com/Uniresearch/Uniresearch:latest",
       "Cpu": 4,
       "Memory": 8,
       "Port": [
@@ -373,18 +373,18 @@ spec:
           "Value": "your_api_key_here"
         },
         {
-          "Key": "DEEPSCIENTIST_CODEX_PROFILE",
+          "Key": "Uniresearch_CODEX_PROFILE",
           "Value": "ark"
         },
         {
-          "Key": "DEEPSCIENTIST_HOME",
-          "Value": "/home/deepscientist/DeepScientist"
+          "Key": "Uniresearch_HOME",
+          "Value": "/home/Uniresearch/Uniresearch"
         }
       ],
       "VolumeMount": [
         {
           "Name": "nas-volume",
-          "MountPath": "/home/deepscientist/DeepScientist"
+          "MountPath": "/home/Uniresearch/Uniresearch"
         }
       ],
       "ReadinessProbe": {
@@ -412,7 +412,7 @@ spec:
       "Name": "nas-volume",
       "NFSVolume": {
         "Server": "your-nas-server.cn-shanghai.nas.aliyuncs.com",
-        "Path": "/deepscientist",
+        "Path": "/Uniresearch",
         "ReadOnly": false
       }
     }
@@ -452,7 +452,7 @@ aliyun eci UpdateContainerGroup \
 # 创建 SLB 实例
 aliyun slb CreateLoadBalancer \
   --RegionId cn-shanghai \
-  --LoadBalancerName deepscientist-slb \
+  --LoadBalancerName Uniresearch-slb \
   --AddressType internet
 
 # 创建 TCP 监听
@@ -488,7 +488,7 @@ aliyun eci DeleteContainerGroup --RegionId cn-shanghai --ContainerGroupId eci-xx
 
 ## 方案三：函数计算 FC 部署（受限）
 
-> ⚠️ **注意**：DeepScientist 是长期运行的服务，FC 有执行时间限制（最长 600 秒），不适合直接部署完整服务。仅适合部署特定的 API 端点或任务处理函数。
+> ⚠️ **注意**：Uniresearch 是长期运行的服务，FC 有执行时间限制（最长 600 秒），不适合直接部署完整服务。仅适合部署特定的 API 端点或任务处理函数。
 
 ### 3.1 适用的场景
 
@@ -503,19 +503,19 @@ aliyun eci DeleteContainerGroup --RegionId cn-shanghai --ContainerGroupId eci-xx
 
 ```yaml
 edition: 1.0.0
-name: deepscientist-fc
+name: Uniresearch-fc
 access: default
 
 vars:
   region: cn-shanghai
 
 services:
-  deepscientist-api:
+  Uniresearch-api:
     component: fc
     props:
       region: ${vars.region}
-      serviceName: deepscientist-service
-      description: DeepScientist API Functions
+      serviceName: Uniresearch-service
+      description: Uniresearch API Functions
       role: acs:ram::your-account-id:role/AliyunFcDefaultRole
       internetAccess: true
       vpcConfig:
@@ -528,8 +528,8 @@ services:
         userId: 1000
         mountPoints:
           - serverAddr: your-nas-server.cn-shanghai.nas.aliyuncs.com
-            nasDir: /deepscientist
-            fcDir: /mnt/deepscientist
+            nasDir: /Uniresearch
+            fcDir: /mnt/Uniresearch
       functions:
         - name: webhook-handler
           description: Handle webhook requests
@@ -540,7 +540,7 @@ services:
           timeout: 60
           environmentVariables:
             VOLCENGINE_ARK_API_KEY: your_api_key
-            DEEPSCIENTIST_HOME: /mnt/deepscientist
+            Uniresearch_HOME: /mnt/Uniresearch
       triggers:
         - name: http-trigger
           type: http
@@ -605,16 +605,16 @@ set -e
 
 # ============== 配置区域 ==============
 REGION="cn-shanghai"
-NAMESPACE="deepscientist"
-IMAGE_NAME="deepscientist"
-CLUSTER_NAME="deepscientist-cluster"
+NAMESPACE="Uniresearch"
+IMAGE_NAME="Uniresearch"
+CLUSTER_NAME="Uniresearch-cluster"
 VPC_ID="vpc-xxxxxx"           # 替换为您的 VPC ID
 VSWITCH_ID="vsw-xxxxxx"       # 替换为您的交换机 ID
 SECURITY_GROUP_ID="sg-xxxxxx" # 替换为您的安全组 ID
 API_KEY="your_api_key_here"   # 替换为您的 API Key
 # ====================================
 
-echo "=== DeepScientist 阿里云 Serverless 部署脚本 ==="
+echo "=== Uniresearch 阿里云 Serverless 部署脚本 ==="
 
 # 1. 检查必要工具
 echo "[1/7] 检查必要工具..."
@@ -644,31 +644,31 @@ aliyun cs GET /k8s/$CLUSTER_ID/user_config > ~/.kube/config
 
 # 5. 创建命名空间和 Secret
 echo "[5/7] 创建 Kubernetes 资源..."
-kubectl create namespace deepscientist 2>/dev/null || true
-kubectl create secret generic deepscientist-secrets \
+kubectl create namespace Uniresearch 2>/dev/null || true
+kubectl create secret generic Uniresearch-secrets \
     --from-literal=VOLCENGINE_ARK_API_KEY=$API_KEY \
-    --from-literal=DEEPSCIENTIST_CODEX_PROFILE=ark \
-    -n deepscientist 2>/dev/null || true
+    --from-literal=Uniresearch_CODEX_PROFILE=ark \
+    -n Uniresearch 2>/dev/null || true
 
 # 6. 部署应用
 echo "[6/7] 部署应用..."
-cat <<EOF | kubectl apply -n deepscientist -f -
+cat <<EOF | kubectl apply -n Uniresearch -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: deepscientist
+  name: Uniresearch
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: deepscientist
+      app: Uniresearch
   template:
     metadata:
       labels:
-        app: deepscientist
+        app: Uniresearch
     spec:
       containers:
-      - name: deepscientist
+      - name: Uniresearch
         image: registry.${REGION}.aliyuncs.com/${NAMESPACE}/${IMAGE_NAME}:latest
         ports:
         - containerPort: 20999
@@ -676,13 +676,13 @@ spec:
         - name: VOLCENGINE_ARK_API_KEY
           valueFrom:
             secretKeyRef:
-              name: deepscientist-secrets
+              name: Uniresearch-secrets
               key: VOLCENGINE_ARK_API_KEY
-        - name: DEEPSCIENTIST_CODEX_PROFILE
+        - name: Uniresearch_CODEX_PROFILE
           valueFrom:
             secretKeyRef:
-              name: deepscientist-secrets
-              key: DEEPSCIENTIST_CODEX_PROFILE
+              name: Uniresearch-secrets
+              key: Uniresearch_CODEX_PROFILE
         resources:
           requests:
             cpu: "1"
@@ -700,7 +700,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: deepscientist-service
+  name: Uniresearch-service
   annotations:
     service.beta.kubernetes.io/alibaba-cloud-loadbalancer-spec: "slb.s1.small"
 spec:
@@ -709,19 +709,19 @@ spec:
   - port: 80
     targetPort: 20999
   selector:
-    app: deepscientist
+    app: Uniresearch
 EOF
 
 # 7. 等待服务就绪
 echo "[7/7] 等待服务就绪..."
-kubectl rollout status deployment/deepscientist -n deepscientist --timeout=300s
+kubectl rollout status deployment/Uniresearch -n Uniresearch --timeout=300s
 
 # 获取访问地址
-EXTERNAL_IP=$(kubectl get svc deepscientist-service -n deepscientist -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+EXTERNAL_IP=$(kubectl get svc Uniresearch-service -n Uniresearch -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 echo ""
 echo "=== 部署成功 ==="
 echo "访问地址: http://$EXTERNAL_IP"
-echo "查看日志: kubectl logs -n deepscientist -l app=deepscientist -f"
+echo "查看日志: kubectl logs -n Uniresearch -l app=Uniresearch -f"
 ```
 
 ---
@@ -735,9 +735,9 @@ echo "查看日志: kubectl logs -n deepscientist -l app=deepscientist -f"
 **解决方案**：
 ```bash
 # 增加内存限制
-kubectl set resources deployment/deepscientist \
+kubectl set resources deployment/Uniresearch \
   --limits=memory=16Gi \
-  -n deepscientist
+  -n Uniresearch
 ```
 
 ### Q2: NAS 挂载失败
@@ -759,10 +759,10 @@ kubectl create secret docker-registry acr-secret \
   --docker-server=registry.cn-shanghai.aliyuncs.com \
   --docker-username=your_username \
   --docker-password=your_password \
-  -n deepscientist
+  -n Uniresearch
 
 # 更新 Deployment 使用密钥
-kubectl patch serviceaccount default -n deepscientist \
+kubectl patch serviceaccount default -n Uniresearch \
   -p '{"imagePullSecrets":[{"name":"acr-secret"}]}'
 ```
 
@@ -781,15 +781,15 @@ kubectl patch serviceaccount default -n deepscientist \
 **解决方案**：
 ```bash
 # 检查 Secret
-kubectl get secret deepscientist-secrets -n deepscientist -o yaml
+kubectl get secret Uniresearch-secrets -n Uniresearch -o yaml
 
 # 更新 Secret
-kubectl create secret generic deepscientist-secrets \
+kubectl create secret generic Uniresearch-secrets \
   --from-literal=VOLCENGINE_ARK_API_KEY=new_key \
-  --dry-run=client -o yaml | kubectl apply -f - -n deepscientist
+  --dry-run=client -o yaml | kubectl apply -f - -n Uniresearch
 
 # 重启 Pod
-kubectl rollout restart deployment/deepscientist -n deepscientist
+kubectl rollout restart deployment/Uniresearch -n Uniresearch
 ```
 
 ---

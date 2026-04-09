@@ -1,6 +1,6 @@
 # 07 Memory and MCP: Built-in MCP and Memory Protocol
 
-This note defines the intended meaning of the three built-in DeepScientist MCP namespaces:
+This note defines the intended meaning of the three built-in Uniresearch MCP namespaces:
 
 - `memory`
 - `artifact`
@@ -121,7 +121,7 @@ Do not use it:
 Example:
 
 ```text
-memory.read(path="~/DeepScientist/quests/q-xxxx/memory/knowledge/metric-contract.md")
+memory.read(path="~/Uniresearch/quests/q-xxxx/memory/knowledge/metric-contract.md")
 ```
 
 ### `memory.write(...)`

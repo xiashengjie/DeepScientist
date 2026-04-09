@@ -1,6 +1,6 @@
 # 06 Runtime and Canvas: Understand Runtime Flow and Canvas
 
-This document describes the **current implemented behavior** of DeepScientist Core in this repository.
+This document describes the **current implemented behavior** of Uniresearch Core in this repository.
 
 It is intentionally based on the real runtime code rather than older architecture drafts.
 
@@ -17,15 +17,15 @@ The behavior described here is derived from these files:
 - `src/skills/write/SKILL.md`
 - `src/skills/finalize/SKILL.md`
 - `src/skills/decision/SKILL.md`
-- `src/deepscientist/prompts/builder.py`
-- `src/deepscientist/daemon/app.py`
-- `src/deepscientist/daemon/api/handlers.py`
-- `src/deepscientist/runners/codex.py`
-- `src/deepscientist/mcp/server.py`
-- `src/deepscientist/artifact/service.py`
-- `src/deepscientist/quest/service.py`
-- `src/deepscientist/quest/node_traces.py`
-- `src/deepscientist/gitops/diff.py`
+- `src/Uniresearch/prompts/builder.py`
+- `src/Uniresearch/daemon/app.py`
+- `src/Uniresearch/daemon/api/handlers.py`
+- `src/Uniresearch/runners/codex.py`
+- `src/Uniresearch/mcp/server.py`
+- `src/Uniresearch/artifact/service.py`
+- `src/Uniresearch/quest/service.py`
+- `src/Uniresearch/quest/node_traces.py`
+- `src/Uniresearch/gitops/diff.py`
 - `src/ui/src/lib/api/lab.ts`
 - `src/ui/src/lib/plugins/lab/components/LabQuestGraphCanvas.tsx`
 
@@ -131,7 +131,7 @@ The skill selection rule is currently simple and important:
 3. If `active_anchor` is one of the standard skills, use that.
 4. Otherwise fall back to `decision`.
 
-This is implemented in `src/deepscientist/daemon/app.py` via `_turn_skill_for(...)`.
+This is implemented in `src/Uniresearch/daemon/app.py` via `_turn_skill_for(...)`.
 
 ## 6. Important Reality: Anchor Progression Is Not Strongly Automated
 
@@ -249,7 +249,7 @@ The Codex runner:
 - prepares an isolated runtime home under `.ds/codex-home/`
 - inherits the configured Codex home semantics (`config.toml`, `auth.json`, `skills/`, `agents/`, `prompts/`)
 - overlays quest-local `.codex/skills/` and `.codex/prompts/` on top of that runtime copy
-- injects DeepScientist built-in MCP servers into `.ds/codex-home/config.toml`
+- injects Uniresearch built-in MCP servers into `.ds/codex-home/config.toml`
 - runs `codex --search exec --json --cd <quest_root> --skip-git-repo-check --model <model> -`
 
 The injected built-in MCP namespaces are exactly:
