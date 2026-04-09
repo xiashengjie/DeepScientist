@@ -674,6 +674,9 @@ const copy = {
 const selectClassName =
   'h-9 rounded-[10px] border border-[rgba(45,42,38,0.1)] bg-white/78 px-3 text-xs text-[rgba(38,36,33,0.95)] outline-none transition focus:border-[rgba(45,42,38,0.18)] dark:border-[rgba(45,42,38,0.1)] dark:bg-white/82 dark:text-[rgba(38,36,33,0.95)] dark:focus:border-[rgba(45,42,38,0.18)]'
 
+const fieldToneClassName =
+  'text-[rgba(38,36,33,0.95)] placeholder:text-[rgba(107,103,97,0.72)] dark:text-[rgba(38,36,33,0.95)] dark:placeholder:text-[rgba(107,103,97,0.72)]'
+
 const panelClass =
   'rounded-xl border border-[rgba(45,42,38,0.09)] bg-[rgba(255,255,255,0.76)] shadow-[0_12px_30px_-24px_rgba(45,42,38,0.32)] backdrop-blur-xl dark:border-[rgba(45,42,38,0.09)] dark:bg-[rgba(255,255,255,0.82)]'
 
@@ -1876,7 +1879,7 @@ export function CreateProjectDialog({
                     value={form.title}
                     onChange={(event) => setField('title', event.target.value)}
                     placeholder={t.titlePlaceholder}
-                    className="rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78"
+                    className={`rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs ${fieldToneClassName} dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78`}
                     disabled={manualOverride}
                   />
                 </InlineField>
@@ -1887,7 +1890,7 @@ export function CreateProjectDialog({
                       value={displayedQuestId}
                       onChange={(event) => handleQuestIdChange(event.target.value)}
                       placeholder={suggestedQuestIdLoading ? t.repoLoading : suggestedQuestId || t.repoPlaceholder}
-                      className="rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78"
+                      className={`rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs ${fieldToneClassName} dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78`}
                       disabled={manualOverride}
                     />
                   </InlineField>
@@ -1898,7 +1901,7 @@ export function CreateProjectDialog({
                     value={form.goal}
                     onChange={(event) => setField('goal', event.target.value)}
                     placeholder={t.goalPlaceholder}
-                    className="min-h-[150px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78"
+                    className={`min-h-[150px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 ${fieldToneClassName} dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78`}
                     disabled={manualOverride}
                   />
                 </InlineField>
@@ -1982,7 +1985,7 @@ export function CreateProjectDialog({
                     value={form.baseline_urls}
                     onChange={(event) => setField('baseline_urls', event.target.value)}
                     placeholder={t.baselineUrlsPlaceholder}
-                    className="min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78"
+                    className={`min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 ${fieldToneClassName} dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78`}
                     disabled={manualOverride || Boolean(form.baseline_id?.trim())}
                   />
                 </InlineField>
@@ -1991,7 +1994,7 @@ export function CreateProjectDialog({
                     value={form.paper_urls}
                     onChange={(event) => setField('paper_urls', event.target.value)}
                     placeholder={t.paperUrlsPlaceholder}
-                    className="min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78"
+                    className={`min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 ${fieldToneClassName} dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78`}
                     disabled={manualOverride}
                   />
                 </InlineField>
@@ -2139,7 +2142,7 @@ export function CreateProjectDialog({
                         value={form.entry_state_summary}
                         onChange={(event) => setField('entry_state_summary', event.target.value)}
                         placeholder={t.entryStateSummaryPlaceholder}
-                        className="min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78"
+                        className={`min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 ${fieldToneClassName} dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78`}
                         disabled={manualOverride}
                       />
                     </InlineField>
@@ -2149,7 +2152,7 @@ export function CreateProjectDialog({
                           value={form.review_summary}
                           onChange={(event) => setField('review_summary', event.target.value)}
                           placeholder={t.reviewSummaryPlaceholder}
-                          className="min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78"
+                          className={`min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 ${fieldToneClassName} dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78`}
                           disabled={manualOverride}
                         />
                       </InlineField>
@@ -2160,7 +2163,7 @@ export function CreateProjectDialog({
                           value={form.review_materials}
                           onChange={(event) => setField('review_materials', event.target.value)}
                           placeholder={t.reviewMaterialsPlaceholder}
-                          className="min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78"
+                          className={`min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 ${fieldToneClassName} dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78`}
                           disabled={manualOverride}
                         />
                       </InlineField>
@@ -2170,7 +2173,7 @@ export function CreateProjectDialog({
                         value={form.custom_brief}
                         onChange={(event) => setField('custom_brief', event.target.value)}
                         placeholder={t.customBriefPlaceholder}
-                        className="min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78"
+                        className={`min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 ${fieldToneClassName} dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78`}
                         disabled={manualOverride}
                       />
                     </InlineField>
@@ -2277,7 +2280,7 @@ export function CreateProjectDialog({
                     value={form.runtime_constraints}
                     onChange={(event) => setField('runtime_constraints', event.target.value)}
                     placeholder={t.runtimeConstraintsPlaceholder}
-                    className="min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78"
+                    className={`min-h-[92px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 ${fieldToneClassName} dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78`}
                     disabled={manualOverride}
                   />
                 </InlineField>
@@ -2289,7 +2292,7 @@ export function CreateProjectDialog({
                     value={form.objectives}
                     onChange={(event) => setField('objectives', event.target.value)}
                     placeholder={t.objectivesPlaceholder}
-                    className="min-h-[120px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78"
+                    className={`min-h-[120px] rounded-[10px] border-[rgba(45,42,38,0.09)] bg-white/75 text-xs leading-5 ${fieldToneClassName} dark:border-[rgba(45,42,38,0.09)] dark:bg-white/78`}
                     disabled={manualOverride}
                   />
                 </InlineField>
