@@ -21,7 +21,7 @@ describe('connectors', () => {
         {
           conversation_id: 'qq:direct:qq-profile-d7iuv7wx::1725C581B930B7EA3585250DCB5DA509',
           profile_id: 'qq-profile-d7iuv7wx',
-          profile_label: 'DeepScientist · 1903577099',
+          profile_label: 'Uniresearch · 1903577099',
           quest_id: '023',
           quest_title: 'Quest 023',
           updated_at: '2026-03-19T11:08:37+00:00',
@@ -35,7 +35,7 @@ describe('connectors', () => {
           chat_id: '1725C581B930B7EA3585250DCB5DA509',
           chat_id_raw: 'qq-profile-d7iuv7wx::1725C581B930B7EA3585250DCB5DA509',
           profile_id: 'qq-profile-d7iuv7wx',
-          profile_label: 'DeepScientist · 1903577099',
+          profile_label: 'Uniresearch · 1903577099',
           label: 'direct · 1725C581B930B7EA3585250DCB5DA509',
           updated_at: '2026-03-20T16:11:24+00:00',
           source: 'outbound_delivery',
@@ -60,7 +60,7 @@ describe('connectors', () => {
       profiles: [
         {
           profile_id: 'qq-1903299925',
-          label: 'DeepScientist · 1903299925',
+          label: 'Uniresearch · 1903299925',
           main_chat_id: 'CF8D2D559AA956B48751539ADFB98865',
           binding_count: 0,
         },
@@ -73,7 +73,7 @@ describe('connectors', () => {
           chat_id: 'CF8D2D559AA956B48751539ADFB98865',
           chat_id_raw: 'qq-1903299925::CF8D2D559AA956B48751539ADFB98865',
           profile_id: 'qq-1903299925',
-          profile_label: 'DeepScientist · 1903299925',
+          profile_label: 'Uniresearch · 1903299925',
           label: 'direct · CF8D2D559AA956B48751539ADFB98865',
           updated_at: '2026-03-20T15:23:00+00:00',
           quest_id: '023',
@@ -86,7 +86,7 @@ describe('connectors', () => {
           chat_id: 'CF8D2D559AA956B48751539ADFB98865',
           chat_id_raw: 'qq-1903299925::CF8D2D559AA956B48751539ADFB98865',
           profile_id: 'qq-1903299925',
-          profile_label: 'DeepScientist · 1903299925',
+          profile_label: 'Uniresearch · 1903299925',
           label: 'direct · CF8D2D559AA956B48751539ADFB98865',
           source: 'recent_activity',
           updated_at: '2026-03-20T15:23:01+00:00',
@@ -112,11 +112,11 @@ describe('connectors', () => {
       name: 'lingzhu',
       discovered_targets: [
         {
-          conversation_id: 'lingzhu:passive:DeepScientist',
+          conversation_id: 'lingzhu:passive:Uniresearch',
           connector: 'lingzhu',
           chat_type: 'passive',
-          chat_id: 'DeepScientist',
-          chat_id_raw: 'DeepScientist',
+          chat_id: 'Uniresearch',
+          chat_id_raw: 'Uniresearch',
           label: 'Passive binding',
           source: 'passive_binding',
           selectable: true,
@@ -127,9 +127,9 @@ describe('connectors', () => {
 
     expect(targets).toHaveLength(1)
     expect(targets[0]).toMatchObject({
-      conversation_id: 'lingzhu:passive:DeepScientist',
+      conversation_id: 'lingzhu:passive:Uniresearch',
       chat_type: 'passive',
-      chat_id: 'DeepScientist',
+      chat_id: 'Uniresearch',
       selectable: true,
     })
   })

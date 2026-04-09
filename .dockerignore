@@ -1,0 +1,62 @@
+# Git
+.git
+.gitignore
+
+# Dependencies
+node_modules
+src/ui/node_modules
+src/ui/lib/node_modules
+src/tui/node_modules
+
+# Build artifacts (will be built in container)
+dist
+build
+.turbo
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.coverage
+htmlcov
+*.egg-info
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+tests
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+coverage
+
+# Development files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local data (should not be in image)
+DeepScientist
+.deepscientist
+
+# Temporary files
+tmp
+temp
+*.tmp
+
+# Documentation that's not needed in runtime
+.github
+*.md
+!README.md
+!AGENTS.md
+CONTRIBUTING.md

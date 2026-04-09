@@ -38,7 +38,7 @@ import { useWorkspaceSurfaceStore } from '@/lib/stores/workspace-surface'
 // Demo Content
 // ============================================================
 
-const DEMO_MARKDOWN = `# DeepScientist Markdown Viewer
+const DEMO_MARKDOWN = `# Uniresearch Markdown Viewer
 
 Welcome to the **Markdown Viewer** plugin. This viewer supports [GitHub Flavored Markdown](https://github.github.com/gfm/) with additional features.
 
@@ -105,7 +105,7 @@ $$
 
 Images are loaded lazily for better performance:
 
-![DeepScientist Logo](https://via.placeholder.com/400x200?text=DeepScientist)
+![Uniresearch Logo](https://via.placeholder.com/400x200?text=Uniresearch)
 
 ### Links
 
@@ -124,7 +124,7 @@ Images are loaded lazily for better performance:
 Happy writing! :rocket:
 `;
 
-const DEMO_MARKDOWN_ZH = `# DeepScientist Markdown 查看器
+const DEMO_MARKDOWN_ZH = `# Uniresearch Markdown 查看器
 
 欢迎使用 **Markdown 查看器** 插件。该查看器支持 [GitHub Flavored Markdown](https://github.github.com/gfm/) 及更多增强能力。
 

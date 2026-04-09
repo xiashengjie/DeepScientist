@@ -317,49 +317,49 @@ export function buildToolOperationContent(
   if (label === 'tool_call') {
     switch (intent) {
       case 'web_search':
-        return subject ? `DeepScientist is searching the web for ${subject}...` : 'DeepScientist is searching the web...'
+        return subject ? `Uniresearch is searching the web for ${subject}...` : 'Uniresearch is searching the web...'
       case 'search':
-        return subject ? `DeepScientist is searching ${subject}...` : 'DeepScientist is searching...'
+        return subject ? `Uniresearch is searching ${subject}...` : 'Uniresearch is searching...'
       case 'read':
-        return subject ? `DeepScientist is reading ${subject}...` : 'DeepScientist is reading...'
+        return subject ? `Uniresearch is reading ${subject}...` : 'Uniresearch is reading...'
       case 'write':
-        return subject ? `DeepScientist is writing ${subject}...` : 'DeepScientist is writing...'
+        return subject ? `Uniresearch is writing ${subject}...` : 'Uniresearch is writing...'
       case 'artifact':
-        return subject ? `DeepScientist is recording ${subject}...` : 'DeepScientist is recording progress...'
+        return subject ? `Uniresearch is recording ${subject}...` : 'Uniresearch is recording progress...'
       case 'memory':
-        return subject ? `DeepScientist is updating memory ${subject}...` : 'DeepScientist is updating memory...'
+        return subject ? `Uniresearch is updating memory ${subject}...` : 'Uniresearch is updating memory...'
       case 'web':
-        return subject ? `DeepScientist is browsing ${subject}...` : 'DeepScientist is browsing...'
+        return subject ? `Uniresearch is browsing ${subject}...` : 'Uniresearch is browsing...'
       case 'shell':
-        return 'DeepScientist is running a shell command...'
+        return 'Uniresearch is running a shell command...'
       case 'file':
-        return subject ? `DeepScientist is inspecting ${subject}...` : 'DeepScientist is inspecting files...'
+        return subject ? `Uniresearch is inspecting ${subject}...` : 'Uniresearch is inspecting files...'
       default:
-        return `DeepScientist is using ${toolName || 'a tool'}...`
+        return `Uniresearch is using ${toolName || 'a tool'}...`
     }
   }
 
   switch (intent) {
     case 'web_search':
-      return subject ? `DeepScientist finished searching the web for ${subject}.` : 'DeepScientist finished searching the web.'
+      return subject ? `Uniresearch finished searching the web for ${subject}.` : 'Uniresearch finished searching the web.'
     case 'search':
-      return subject ? `DeepScientist finished searching ${subject}.` : 'DeepScientist finished searching.'
+      return subject ? `Uniresearch finished searching ${subject}.` : 'Uniresearch finished searching.'
     case 'read':
-      return subject ? `DeepScientist finished reading ${subject}.` : 'DeepScientist finished reading.'
+      return subject ? `Uniresearch finished reading ${subject}.` : 'Uniresearch finished reading.'
     case 'write':
-      return subject ? `DeepScientist updated ${subject}.` : 'DeepScientist updated files.'
+      return subject ? `Uniresearch updated ${subject}.` : 'Uniresearch updated files.'
     case 'artifact':
-      return subject ? `DeepScientist recorded progress for ${subject}.` : 'DeepScientist recorded progress.'
+      return subject ? `Uniresearch recorded progress for ${subject}.` : 'Uniresearch recorded progress.'
     case 'memory':
-      return subject ? `DeepScientist updated memory ${subject}.` : 'DeepScientist updated memory.'
+      return subject ? `Uniresearch updated memory ${subject}.` : 'Uniresearch updated memory.'
     case 'web':
-      return subject ? `DeepScientist finished browsing ${subject}.` : 'DeepScientist finished browsing.'
+      return subject ? `Uniresearch finished browsing ${subject}.` : 'Uniresearch finished browsing.'
     case 'shell':
-      return 'DeepScientist finished running a shell command.'
+      return 'Uniresearch finished running a shell command.'
     case 'file':
-      return subject ? `DeepScientist inspected ${subject}.` : 'DeepScientist inspected files.'
+      return subject ? `Uniresearch inspected ${subject}.` : 'Uniresearch inspected files.'
     default:
-      return `DeepScientist finished using ${toolName || 'a tool'}.`
+      return `Uniresearch finished using ${toolName || 'a tool'}.`
   }
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "@researai/deepscientist",
   "version": "1.5.17",
-  "description": "DeepScientist is not just a fully open-source autonomous scientific discovery system. It is also a research map that keeps growing from every round.",
+  "description": "Uniresearch is not just a fully open-source autonomous scientific discovery system. It is also a research map that keeps growing from every round.",
   "license": "Apache-2.0",
   "files": [
     "AGENTS.md",

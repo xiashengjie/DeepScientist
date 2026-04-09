@@ -46,7 +46,7 @@ const COPY: Record<OnboardingLanguage, OverlayCopy> = {
   en: {
     chooserTitle: 'Choose your first tutorial',
     chooserBody:
-      'DeepScientist can walk you through the first run step by step. Choose the guide language, skip for now, or turn the reminder off.',
+      'Uniresearch can walk you through the first run step by step. Choose the guide language, skip for now, or turn the reminder off.',
     chooserZh: 'Chinese guide',
     chooserEn: 'English guide',
     chooserSkip: 'Skip for now',
@@ -63,7 +63,7 @@ const COPY: Record<OnboardingLanguage, OverlayCopy> = {
   zh: {
     chooserTitle: '选择首次教程语言',
     chooserBody:
-      'DeepScientist 可以像游戏教程一样，带你一步步完成第一次使用。你可以选择中文或英文讲解，也可以先跳过或不再提醒。',
+      'Uniresearch 可以像游戏教程一样，带你一步步完成第一次使用。你可以选择中文或英文讲解，也可以先跳过或不再提醒。',
     chooserZh: '中文讲解',
     chooserEn: 'English guide',
     chooserSkip: '暂时跳过',
@@ -651,7 +651,7 @@ function OnboardingChooser({
         </div>
 
         <p className="mt-4 text-sm leading-7 text-[rgba(70,61,49,0.84)]">
-          DeepScientist 可以像游戏教程一样，带你一步步完成第一次使用。
+          Uniresearch 可以像游戏教程一样，带你一步步完成第一次使用。
           Choose Chinese or English, skip for now, or turn the reminder off.
         </p>
 

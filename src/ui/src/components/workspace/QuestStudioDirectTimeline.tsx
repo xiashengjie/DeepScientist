@@ -378,7 +378,7 @@ function AssistantTurn({
 
       <div className="min-w-0 flex-1 space-y-2.5">
         <div className="flex flex-wrap items-center gap-2 text-[11px] leading-4 text-muted-foreground">
-          <span className="font-medium text-foreground">@DeepScientist</span>
+          <span className="font-medium text-foreground">@Uniresearch</span>
           {turn.skillId ? <Badge className="bg-black/[0.03] dark:bg-white/[0.04]">{turn.skillId}</Badge> : null}
           {hasStreamingMessage ? (
             <span className="inline-flex h-2 w-2 rounded-full bg-[#2F3437] animate-caret dark:bg-[#E7DFD2]" />

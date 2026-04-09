@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  deepscientist:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: deepscientist:latest
+    container_name: deepscientist
+    restart: unless-stopped
+    ports:
+      - "20999:20999"
+    volumes:
+      # Persist data
+      - deepscientist-home:/home/deepscientist/DeepScientist
+      # Optional: mount config files from host
+      # - ./config:/home/deepscientist/DeepScientist/config:ro
+      # Mount codex config for authentication (required for provider profiles)
+      - codex-config:/home/deepscientist/.codex
+    environment:
+      # DeepScientist settings
+      - DEEPSCIENTIST_HOME=/home/deepscientist/DeepScientist
+      - VOLCENGINE_ARK_API_KEY=${VOLCENGINE_ARK_API_KEY}
+      - DEEPSCIENTIST_CODEX_PROFILE=ark
+      # ====== 选择一个模型提供商配置 ======
+      
+      # 方式1: 火山引擎 Ark (取消注释以下行)
+      # - VOLCENGINE_ARK_API_KEY=${VOLCENGINE_ARK_API_KEY}
+      # - DEEPSCIENTIST_CODEX_PROFILE=ark
+      
+      # 方式2: 阿里云百炼 Coding Plan (取消注释以下行)
+      # - BAILIAN_API_KEY=${BAILIAN_API_KEY}
+      # - DEEPSCIENTIST_CODEX_PROFILE=bailian
+      
+      # 方式3: MiniMax (取消注释以下行)
+      # - MINIMAX_API_KEY=${MINIMAX_API_KEY}
+      # - DEEPSCIENTIST_CODEX_PROFILE=m27
+      
+      # 方式4: OpenAI 默认 (取消注释以下行)
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+      
+      # 方式5: 自定义 OpenAI 兼容端点
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:20999/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+volumes:
+  deepscientist-home:
+    driver: local
+  codex-config:
+    driver: local
+
+# Optional: Use external network for reverse proxy
+# networks:
+#   default:
+#     external:
+#       name: traefik_proxy

@@ -319,7 +319,7 @@ class QuestLatexService:
                         r"\usepackage[utf8]{inputenc}",
                         r"\usepackage{hyperref}",
                         r"\title{" + title.replace("{", "").replace("}", "") + "}",
-                        r"\author{DeepScientist}",
+                        r"\author{Uniresearch}",
                         r"\date{\today}",
                         r"",
                         r"\begin{document}",

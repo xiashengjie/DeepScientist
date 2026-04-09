@@ -477,7 +477,7 @@ export const BashExecOperationMessage: React.FC<BashExecOperationMessageProps> =
     exitCode != null ? `exit:${exitCode}` : '',
     stopReason ? compactValue(stopReason, 48) : '',
   ].filter(Boolean)
-  const header = label === 'tool_call' ? 'DeepScientist is managing bash_exec...' : 'DeepScientist updated bash_exec.'
+  const header = label === 'tool_call' ? 'Uniresearch is managing bash_exec...' : 'Uniresearch updated bash_exec.'
   const visibleCommand = command ? compactCommand(command) : compactCommand(content)
   const renderedLogLines =
     logLines.length > 0

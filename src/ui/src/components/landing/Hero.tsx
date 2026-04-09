@@ -366,11 +366,10 @@ export default function Hero(props: {
                           rel="noreferrer"
                           className="underline decoration-[#9FB1C2] underline-offset-4 transition-colors hover:text-[#5D5A55]"
                         >
-                          {hero.copy.moreContentUrl}
                         </a>
                         .
                       </div>
-                      {currentVersion ? <div>{`DeepScientist v${currentVersion}`}</div> : null}
+                      {currentVersion ? <div>{`Uniresearch v${currentVersion}`}</div> : null}
                     </div>
                   </div>
                 </FadeContent>

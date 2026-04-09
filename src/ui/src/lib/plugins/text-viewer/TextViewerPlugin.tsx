@@ -553,7 +553,7 @@ function highlightMatches(text: string, query: string): React.ReactNode {
 /**
  * Demo text content
  */
-const DEMO_TEXT = `DeepScientist - Text Viewer Demo
+const DEMO_TEXT = `Uniresearch - Text Viewer Demo
 ================================
 
 This is a demonstration of the Text Viewer plugin.

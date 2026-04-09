@@ -260,14 +260,14 @@ const displayMaybeString = (value: unknown): string => {
 
 const CONNECTOR_BIND_ACTION_PREFIX = 'bind-target:'
 const CONNECTOR_UNBIND_ACTION_PREFIX = 'unbind-target:'
-const LINGZHU_PUBLIC_AGENT_ID = 'DeepScientist'
-const LINGZHU_PLATFORM_AGENT_NAME = 'DeepScientist'
+const LINGZHU_PUBLIC_AGENT_ID = 'Uniresearch'
+const LINGZHU_PLATFORM_AGENT_NAME = 'Uniresearch'
 const LINGZHU_PLATFORM_CATEGORY = 'Work'
 const LINGZHU_PLATFORM_INPUT_TYPE = 'Text'
 const LINGZHU_PLATFORM_CAPABILITY_SUMMARY =
-  'DeepScientist is a local-first research agent for planning, experiments, analysis, writing, and execution follow-up.'
+  'Uniresearch is a local-first research agent for planning, experiments, analysis, writing, and execution follow-up.'
 const LINGZHU_PLATFORM_OPENING_MESSAGE =
-  'Hello, I am DeepScientist. Tell me the research goal, experiment question, or task you want to move forward.'
+  'Hello, I am Uniresearch. Tell me the research goal, experiment question, or task you want to move forward.'
 const LINGZHU_PLATFORM_LOGO_PATH = '/assets/branding/logo-rokid.png'
 
 const normalizedText = (value: unknown) => String(value ?? '').trim()
@@ -817,7 +817,7 @@ export const AppContainer: React.FC<{ baseUrl: string; initialQuestId?: string |
           lines: [
             '1. Choose Bind/Rebind Weixin to create a QR code inside TUI.',
             '2. Scan the QR code with the WeChat app on the phone that owns this account, then confirm the login in WeChat.',
-            '3. DeepScientist saves the binding automatically and returns here after confirmation.',
+            '3. Uniresearch saves the binding automatically and returns here after confirmation.',
           ],
         },
         {
@@ -846,7 +846,7 @@ export const AppContainer: React.FC<{ baseUrl: string; initialQuestId?: string |
           title: 'Top Guide',
           tone,
           lines: [
-            '1. Set Public base URL to the final public DeepScientist origin before binding a real Rokid device.',
+            '1. Set Public base URL to the final public Uniresearch origin before binding a real Rokid device.',
             '2. Copy the generated Rokid fields below into the platform exactly as shown, including Custom agent ID, URL, AK, Agent name, Category, Capability summary, Opening message, and Input type.',
             '3. After the Rokid form is filled on the platform, return here and run Save Connector.',
           ],
@@ -1049,7 +1049,7 @@ export const AppContainer: React.FC<{ baseUrl: string; initialQuestId?: string |
           key: 'public_base_url',
           label: 'Public base URL',
           value: displayMaybeString(selectedConnectorConfig.public_base_url),
-          description: 'Publicly reachable DeepScientist base URL used by Rokid devices.',
+          description: 'Publicly reachable Uniresearch base URL used by Rokid devices.',
           fieldKind: 'url',
           editable: true,
         },
@@ -1058,7 +1058,7 @@ export const AppContainer: React.FC<{ baseUrl: string; initialQuestId?: string |
           key: 'local_host',
           label: 'Local host',
           value: displayMaybeString(selectedConnectorConfig.local_host),
-          description: 'Host used by DeepScientist when probing its own Lingzhu routes locally.',
+          description: 'Host used by Uniresearch when probing its own Lingzhu routes locally.',
           fieldKind: 'text',
           editable: true,
         },
@@ -1122,7 +1122,7 @@ export const AppContainer: React.FC<{ baseUrl: string; initialQuestId?: string |
           id: 'lingzhu-platform-category',
           label: 'Category',
           value: LINGZHU_PLATFORM_CATEGORY,
-          description: 'Recommended Rokid category for the DeepScientist agent.',
+          description: 'Recommended Rokid category for the Uniresearch agent.',
         },
         {
           type: 'info',
@@ -1145,14 +1145,14 @@ export const AppContainer: React.FC<{ baseUrl: string; initialQuestId?: string |
           id: 'lingzhu-platform-input-type',
           label: 'Input type',
           value: LINGZHU_PLATFORM_INPUT_TYPE,
-          description: 'Recommended Rokid input type for DeepScientist.',
+          description: 'Recommended Rokid input type for Uniresearch.',
         },
         {
           type: 'info',
           id: 'lingzhu-platform-logo-url',
           label: 'Icon/logo URL',
           value: displayMaybeString(logoUrl),
-          description: 'Optional Rokid icon URL. The Web popup shows the same DeepScientist Rokid logo.',
+          description: 'Optional Rokid icon URL. The Web popup shows the same Uniresearch Rokid logo.',
         },
         {
           type: 'info',
@@ -1166,14 +1166,14 @@ export const AppContainer: React.FC<{ baseUrl: string; initialQuestId?: string |
           id: 'lingzhu-local-sse',
           label: 'Local SSE URL',
           value: displayMaybeString(details.endpoint_url),
-          description: 'Local SSE endpoint used by DeepScientist probes.',
+          description: 'Local SSE endpoint used by Uniresearch probes.',
         },
         {
           type: 'info',
           id: 'lingzhu-local-health',
           label: 'Local health URL',
           value: displayMaybeString(details.health_url),
-          description: 'Local health endpoint used by DeepScientist probes.',
+          description: 'Local health endpoint used by Uniresearch probes.',
         },
         ...bindingActionItems,
       ]
@@ -1300,7 +1300,7 @@ export const AppContainer: React.FC<{ baseUrl: string; initialQuestId?: string |
           id: 'qq-detected-openid',
           label: 'Detected OpenID',
           value: displayMaybeString(selectedConnectorConfig.main_chat_id || selectedConnectorSnapshot?.main_chat_id),
-          description: 'This value is auto-filled after the first private QQ message reaches DeepScientist.',
+          description: 'This value is auto-filled after the first private QQ message reaches Uniresearch.',
         },
         {
           type: 'info',
@@ -2791,7 +2791,7 @@ export const AppContainer: React.FC<{ baseUrl: string; initialQuestId?: string |
         setPendingHistoryItems(optimisticPending)
         try {
           await client.sendChat(baseUrl, activeQuestId, text, replyTargetId)
-          setStatusLine(replyTargetId ? 'Reply sent · continuing current quest.' : 'Message sent · DeepScientist is working.')
+          setStatusLine(replyTargetId ? 'Reply sent · continuing current quest.' : 'Message sent · Uniresearch is working.')
         } catch (error) {
           const revertedPending = pendingHistoryItemsRef.current.filter((item) => item.id !== localUserItem.id)
           pendingHistoryItemsRef.current = revertedPending

@@ -1,0 +1,71 @@
+# DeepScientist Codex 配置示例
+# 将此文件复制到 ~/.codex/config.toml 或挂载到容器中
+
+# ========================================
+# 火山引擎 Ark 配置
+# ========================================
+# 官方文档: https://www.volcengine.com/docs/82379/1925114
+
+[model_providers.volcengine]
+name = "Volcengine Ark Coding"
+base_url = "https://ark.cn-beijing.volces.com/api/coding/v3"
+env_key = "VOLCENGINE_ARK_API_KEY"  # 环境变量名称，不是 API Key 值
+wire_api = "chat"
+requires_openai_auth = false
+
+[profiles.ark]
+model = "doubao-seed-2-0-lite-260215"  # 或 "ark-code-latest"
+model_provider = "volcengine"
+
+# ========================================
+# 阿里云百炼 Coding Plan 配置
+# ========================================
+# 官方文档: https://help.aliyun.com/zh/model-studio/other-tools-coding-plan
+# 注意: 必须使用 Coding Plan 端点，不是通用 Bailian/DashScope API
+
+[model_providers.bailian]
+name = "Alibaba Bailian Coding Plan"
+base_url = "https://coding.dashscope.aliyuncs.com/v1"
+env_key = "BAILIAN_API_KEY"
+wire_api = "chat"
+requires_openai_auth = false
+
+[profiles.bailian]
+model = "qwen-coder-plus-latest"  # 或其他 Coding Plan 支持的模型
+model_provider = "bailian"
+
+# ========================================
+# MiniMax 配置 (参考)
+# ========================================
+# 官方文档: https://platform.minimaxi.com/docs/coding-plan/codex-cli
+
+[model_providers.minimax]
+name = "MiniMax Chat Completions API"
+base_url = "https://api.minimaxi.com/v1"
+env_key = "MINIMAX_API_KEY"
+wire_api = "chat"
+requires_openai_auth = false
+
+[profiles.m27]
+model = "MiniMax-M2.7"
+model_provider = "minimax"
+
+[profiles.m25]
+model = "MiniMax-M2.5"
+model_provider = "minimax"
+
+# ========================================
+# GLM 配置 (参考)
+# ========================================
+# 官方文档: https://docs.bigmodel.cn/cn/coding-plan/tool/others
+
+[model_providers.glm]
+name = "GLM Coding Plan"
+base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
+env_key = "GLM_API_KEY"
+wire_api = "chat"
+requires_openai_auth = false
+
+[profiles.glm]
+model = "GLM-4.7"  # 或 "GLM-5"
+model_provider = "glm"

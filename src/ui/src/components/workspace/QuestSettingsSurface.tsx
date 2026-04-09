@@ -602,7 +602,7 @@ export function QuestSettingsSurface({
                 <div>
                   <div className="text-sm font-medium text-foreground">Codex environment</div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    These variables are injected when DeepScientist starts Codex. Empty values are ignored.
+                    These variables are injected when Uniresearch starts Codex. Empty values are ignored.
                   </div>
                   {runnerEnvDirty ? (
                     <div className="mt-2 text-xs font-medium text-[var(--ds-brand)]">

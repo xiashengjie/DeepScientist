@@ -159,8 +159,8 @@ function buildEventMetadata(
     quest_id: questId,
     session_id: sessionId,
     sender_type: 'agent',
-    sender_label: 'DeepScientist',
-    sender_name: 'DeepScientist',
+    sender_label: 'Uniresearch',
+    sender_name: 'Uniresearch',
     ...extra,
   }
 }
@@ -308,9 +308,9 @@ function normalizeQuestMessageEvent(
         }
       : {
           sender_type: 'agent',
-          sender_label: 'DeepScientist',
-          sender_name: 'DeepScientist',
-          agent_label: 'DeepScientist',
+          sender_label: 'Uniresearch',
+          sender_name: 'Uniresearch',
+          agent_label: 'Uniresearch',
         }
   )
   if (role === 'assistant') {
@@ -757,8 +757,8 @@ function buildQuestSessionLike(
     agents: [
       {
         agent_id: 'deepscientist',
-        agent_label: 'DeepScientist',
-        agent_display_name: 'DeepScientist',
+        agent_label: 'Uniresearch',
+        agent_display_name: 'Uniresearch',
         agent_source: snapshot.runner ?? 'codex',
         agent_engine: snapshot.runner ?? 'codex',
       },

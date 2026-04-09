@@ -1525,7 +1525,7 @@ export default function LatexPlugin({ context, tabId, setDirty, setTitle }: Plug
     [activeFileId, activeFileName, files, flushPendingJump, focusBuildIssue]
   );
 
-  const handleAskDeepScientistForIssue = React.useCallback(
+  const handleAskUniresearchForIssue = React.useCallback(
     (issue: LatexBuildError) => {
       const focusedIssue = focusBuildIssue(issue);
       const severityLabel =
@@ -1614,7 +1614,7 @@ export default function LatexPlugin({ context, tabId, setDirty, setTitle }: Plug
           <div className="flex shrink-0 items-center gap-1 pt-1">
             <button
               type="button"
-              onClick={() => handleAskDeepScientistForIssue(issue)}
+              onClick={() => handleAskUniresearchForIssue(issue)}
               className="rounded-md border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/[0.05] px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.08]"
               title={t("issue_action_ask_deepscientist")}
             >
@@ -1627,7 +1627,7 @@ export default function LatexPlugin({ context, tabId, setDirty, setTitle }: Plug
     [
       activeFileId,
       files,
-      handleAskDeepScientistForIssue,
+      handleAskUniresearchForIssue,
       handleBuildIssueClick,
       t,
     ]

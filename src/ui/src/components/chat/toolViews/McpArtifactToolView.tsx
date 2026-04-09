@@ -605,22 +605,22 @@ export function McpArtifactToolView({ toolContent }: ToolViewProps) {
   const arxivMode = asString(resultRecord?.mode) || asString(args.mode) || 'read'
 
   const titleMap: Record<string, string> = {
-    record: active ? 'DeepScientist is recording artifact...' : 'DeepScientist recorded artifact.',
-    checkpoint: active ? 'DeepScientist is creating checkpoint...' : 'DeepScientist created checkpoint.',
-    prepare_branch: active ? 'DeepScientist is preparing branch...' : 'DeepScientist prepared branch.',
-    activate_branch: active ? 'DeepScientist is activating branch...' : 'DeepScientist activated branch.',
-    publish_baseline: active ? 'DeepScientist is publishing baseline...' : 'DeepScientist published baseline.',
-    attach_baseline: active ? 'DeepScientist is attaching baseline...' : 'DeepScientist attached baseline.',
-    confirm_baseline: active ? 'DeepScientist is confirming baseline...' : 'DeepScientist confirmed baseline.',
-    waive_baseline: active ? 'DeepScientist is waiving baseline...' : 'DeepScientist waived baseline.',
-    submit_idea: active ? 'DeepScientist is submitting idea...' : 'DeepScientist submitted idea.',
-    record_main_experiment: active ? 'DeepScientist is recording main experiment...' : 'DeepScientist recorded main experiment.',
-    create_analysis_campaign: active ? 'DeepScientist is creating analysis campaign...' : 'DeepScientist created analysis campaign.',
-    record_analysis_slice: active ? 'DeepScientist is recording analysis slice...' : 'DeepScientist recorded analysis slice.',
-    arxiv: active ? 'DeepScientist is reading arXiv paper...' : 'DeepScientist read arXiv paper.',
-    refresh_summary: active ? 'DeepScientist is refreshing summary...' : 'DeepScientist refreshed summary.',
-    render_git_graph: active ? 'DeepScientist is rendering git graph...' : 'DeepScientist rendered git graph.',
-    interact: active ? 'DeepScientist is sending interaction...' : 'DeepScientist sent interaction.',
+    record: active ? 'Uniresearch is recording artifact...' : 'Uniresearch recorded artifact.',
+    checkpoint: active ? 'Uniresearch is creating checkpoint...' : 'Uniresearch created checkpoint.',
+    prepare_branch: active ? 'Uniresearch is preparing branch...' : 'Uniresearch prepared branch.',
+    activate_branch: active ? 'Uniresearch is activating branch...' : 'Uniresearch activated branch.',
+    publish_baseline: active ? 'Uniresearch is publishing baseline...' : 'Uniresearch published baseline.',
+    attach_baseline: active ? 'Uniresearch is attaching baseline...' : 'Uniresearch attached baseline.',
+    confirm_baseline: active ? 'Uniresearch is confirming baseline...' : 'Uniresearch confirmed baseline.',
+    waive_baseline: active ? 'Uniresearch is waiving baseline...' : 'Uniresearch waived baseline.',
+    submit_idea: active ? 'Uniresearch is submitting idea...' : 'Uniresearch submitted idea.',
+    record_main_experiment: active ? 'Uniresearch is recording main experiment...' : 'Uniresearch recorded main experiment.',
+    create_analysis_campaign: active ? 'Uniresearch is creating analysis campaign...' : 'Uniresearch created analysis campaign.',
+    record_analysis_slice: active ? 'Uniresearch is recording analysis slice...' : 'Uniresearch recorded analysis slice.',
+    arxiv: active ? 'Uniresearch is reading arXiv paper...' : 'Uniresearch read arXiv paper.',
+    refresh_summary: active ? 'Uniresearch is refreshing summary...' : 'Uniresearch refreshed summary.',
+    render_git_graph: active ? 'Uniresearch is rendering git graph...' : 'Uniresearch rendered git graph.',
+    interact: active ? 'Uniresearch is sending interaction...' : 'Uniresearch sent interaction.',
   }
 
   const accent =
@@ -652,9 +652,9 @@ export function McpArtifactToolView({ toolContent }: ToolViewProps) {
         title={
           toolLabel === 'arxiv' && arxivMode === 'list'
             ? active
-              ? 'DeepScientist is listing saved arXiv papers...'
-              : 'DeepScientist listed the saved arXiv papers.'
-            : titleMap[toolLabel] || (active ? 'DeepScientist is updating artifact...' : 'DeepScientist updated artifact.')
+              ? 'Uniresearch is listing saved arXiv papers...'
+              : 'Uniresearch listed the saved arXiv papers.'
+            : titleMap[toolLabel] || (active ? 'Uniresearch is updating artifact...' : 'Uniresearch updated artifact.')
         }
         subtitle={recordSummary || subtitleMap[toolLabel] || 'Artifact tools persist branch, report, baseline, and interaction state.'}
         accent={accent}

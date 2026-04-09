@@ -26,7 +26,7 @@ export const notebookPluginManifest: UnifiedPluginManifest = {
   description: "Novel-based rich text editor with real-time collaboration",
   version: "1.0.0",
   type: "builtin",
-  author: "DeepScientist Team",
+  author: "Uniresearch Team",
   icon: "BookOpen",
 
   // ============================================================

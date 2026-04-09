@@ -136,13 +136,13 @@ function describeBashActivity(args: {
   }
   const location = args.workdir.trim() || '~'
   if (args.isFailed) {
-    return 'DeepScientist finished the terminal task with an error.'
+    return 'Uniresearch finished the terminal task with an error.'
   }
   if (args.isStopped) {
-    return 'DeepScientist stopped the terminal task.'
+    return 'Uniresearch stopped the terminal task.'
   }
   if (args.isRunning) {
-    return `DeepScientist is operating the terminal in ${location}.`
+    return `Uniresearch is operating the terminal in ${location}.`
   }
   return ''
 }
@@ -351,8 +351,8 @@ export function QuestBashExecOperation({
         ? metadata.session_id
         : `quest:${questId}`,
     sender_type: 'agent',
-    sender_label: 'DeepScientist',
-    sender_name: 'DeepScientist',
+    sender_label: 'Uniresearch',
+    sender_name: 'Uniresearch',
     ...(metadata as EventMetadata | undefined),
   }
 

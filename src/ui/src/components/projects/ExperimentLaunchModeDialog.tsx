@@ -14,7 +14,7 @@ type ExperimentLaunchModeDialogProps = {
 const copy = {
   en: {
     title: 'Choose the start style',
-    body: 'Either way, DeepScientist stays with you.',
+    body: 'Either way, Uniresearch stays with you.',
     copilot: {
       hero: 'Copilot Mode',
       title: 'Create first. You decide when to start.',
@@ -30,7 +30,7 @@ const copy = {
   },
   zh: {
     title: '选择启动方式',
-    body: '无论哪种，DeepScientist 都会在你身边。',
+    body: '无论哪种，Uniresearch 都会在你身边。',
     copilot: {
       hero: '协作模式',
       title: '先创建，再由你决定何时开始。',

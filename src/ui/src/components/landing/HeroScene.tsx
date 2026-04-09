@@ -195,35 +195,6 @@ export default function HeroScene({ progress, stageIndex, reducedMotion, isMobil
       <div className="pointer-events-none absolute left-1/2 top-3 z-40 max-w-[85%] -translate-x-1/2 rounded-full bg-white/80 px-3 py-1 text-center text-[9px] uppercase tracking-[0.18em] text-[#6F6B66] shadow-[0_6px_16px_rgba(45,42,38,0.12)] backdrop-blur sm:left-auto sm:top-4 sm:max-w-none sm:translate-x-0 sm:text-left sm:text-[10px] sm:tracking-[0.2em] sm:right-4">
         Exploring Unknown Scientific Frontiers
       </div>
-      <img
-        ref={mountainRef}
-        src={MOUNTAIN_SRC}
-        alt="Watercolor mountain"
-        className="absolute inset-0 z-10 h-full w-full object-contain"
-        style={{ transition: reducedMotion ? 'none' : 'transform 160ms ease-out' }}
-        draggable={false}
-      />
-
-      <svg
-        ref={pathLayerRef}
-        viewBox="0 0 1536 600"
-        className="absolute inset-0 z-20 h-full w-full"
-        preserveAspectRatio="xMidYMid meet"
-        style={{
-          color: 'rgba(45, 42, 38, 0.65)',
-          transition: reducedMotion ? 'none' : 'transform 160ms ease-out',
-        }}
-      >
-        <path
-          ref={pathRef}
-          d="M251 175.011C264.926 174.011 308.395 184.412 370.864 234.015C433.332 283.618 482.438 278.018 499.182 269.017L581.246 215.514C594.509 218.681 624.417 223.114 645.903 215.514C667.389 207.913 741.723 166.907 771.398 149.906C817.487 186.408 907.277 254.713 949.453 207.91C991.629 161.106 970.347 115.507 952.773 99.5062L817.989 7"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          fill="none"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
 
       <div
         className="ds-hero-start z-40"
@@ -322,12 +293,6 @@ export default function HeroScene({ progress, stageIndex, reducedMotion, isMobil
         draggable={false}
       />
 
-      <img
-        src={SEAL_SRC}
-        alt="Seal"
-        className="ds-hero-seal z-50"
-        draggable={false}
-      />
 
     </div>
   )

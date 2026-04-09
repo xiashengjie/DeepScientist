@@ -274,8 +274,8 @@ export function LabToolCard({
         normalizeText(args.initial_instruction) || normalizeText(result?.initial_instruction)
       const instruction = stripPiLaunchMarker(instructionRaw)
       summary = templateKey
-        ? `DeepScientist is recruiting @${templateKey}`
-        : 'DeepScientist is recruiting an agent'
+        ? `Uniresearch is recruiting @${templateKey}`
+        : 'Uniresearch is recruiting an agent'
       const agentInstanceId =
         normalizeText(result?.agent_instance_id) || normalizeText(args.agent_instance_id)
       const agentId = normalizeText(result?.agent_id) || normalizeText(args.agent_id)
@@ -335,7 +335,7 @@ export function LabToolCard({
         normalizeText(result?.question) ||
         normalizeText(args.context_md) ||
         resolvedQuestionFromLookup
-      summary = question ? 'DeepScientist is asking PI' : 'DeepScientist is asking PI'
+      summary = question ? 'Uniresearch is asking PI' : 'Uniresearch is asking PI'
       waiting = tool.status === 'calling'
       status = waiting ? 'Waiting' : 'Done'
       if (questId) {
@@ -362,7 +362,7 @@ export function LabToolCard({
         normalizeText(result?.question) ||
         normalizeText(args.context_md) ||
         resolvedQuestionFromLookup
-      summary = 'DeepScientist received PI response'
+      summary = 'Uniresearch received PI response'
       if (questId) {
         actions.push({
           id: 'open-quest',
@@ -425,8 +425,8 @@ export function LabToolCard({
       const questTitle = normalizeText(args.title) || normalizeText(result?.title)
       const questSummary = normalizeText(args.summary) || normalizeText(result?.summary)
       summary = questTitle
-        ? `DeepScientist is creating "${questTitle}"`
-        : 'DeepScientist is creating a quest'
+        ? `Uniresearch is creating "${questTitle}"`
+        : 'Uniresearch is creating a quest'
       if (questTitle) details.push({ label: 'title', value: questTitle })
       if (questSummary) details.push({ label: 'summary', value: questSummary })
       const createdQuestId = normalizeText(result?.quest_id)
@@ -509,8 +509,8 @@ export function LabToolCard({
     const memSummary =
       memTitle || extractFirstLine(memContent) || [memMode, memKind].filter(Boolean).join(' · ')
     summary = memTitle
-      ? `DeepScientist is saving memory "${memTitle}"`
-      : 'DeepScientist is saving memory'
+      ? `Uniresearch is saving memory "${memTitle}"`
+      : 'Uniresearch is saving memory'
     const memId = normalizeText(result?.id) || normalizeText(args.id)
     const tags = normalizeList(args.tags)
     const confidence = normalizeText(args.confidence)
@@ -526,8 +526,8 @@ export function LabToolCard({
     const path = normalizeText(args.target_path) || normalizeText(args.source_path)
     const modeLabel = baselineMode || 'processing'
     summary = path
-      ? `DeepScientist is ${modeLabel.replace(/_/g, ' ')} ${path}`
-      : `DeepScientist is ${modeLabel.replace(/_/g, ' ')} baseline`
+      ? `Uniresearch is ${modeLabel.replace(/_/g, ' ')} ${path}`
+      : `Uniresearch is ${modeLabel.replace(/_/g, ' ')} baseline`
     const baselineId = normalizeText(args.baseline_root_id) || normalizeText(result?.baseline_root_id)
     if (baselineId) details.push({ label: 'baseline_id', value: baselineId })
   }
@@ -623,7 +623,7 @@ export function LabToolCard({
                   compact ? 'text-[10px]' : 'text-[11px]'
                 )}
               >
-                DeepScientist is reading quests...
+                Uniresearch is reading quests...
               </span>
             </span>
           </div>

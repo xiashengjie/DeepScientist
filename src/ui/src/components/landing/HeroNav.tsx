@@ -27,11 +27,11 @@ export default function HeroNav() {
         <Link
           href="/"
           className="flex items-center gap-2 rounded-full px-2 py-1 transition-colors hover:bg-black/[0.03]"
-          aria-label="DeepScientist"
+          aria-label="Uniresearch"
         >
           <img
             src={BRAND_LOGO_SMALL_SRC}
-            alt="DeepScientist"
+            alt="Uniresearch"
             width={28}
             height={28}
             className="object-contain"
@@ -41,7 +41,7 @@ export default function HeroNav() {
             draggable={false}
           />
           <span className="text-sm font-semibold tracking-tight text-[#2D2A26]">
-            DeepScientist
+            Uniresearch
           </span>
         </Link>
 

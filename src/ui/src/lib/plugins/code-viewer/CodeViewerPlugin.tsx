@@ -659,7 +659,7 @@ export default function CodeViewerPlugin({
  * Demo code samples for different languages
  */
 const DEMO_CODE: Record<string, string> = {
-  javascript: `// DeepScientist - Example JavaScript Code
+  javascript: `// Uniresearch - Example JavaScript Code
 import { useState, useEffect } from 'react';
 
 /**
@@ -700,7 +700,7 @@ const { data, loading } = useFetch(API_URL);
 
 console.log("Data loaded:", data);
 `,
-  typescript: `// DeepScientist - Example TypeScript Code
+  typescript: `// Uniresearch - Example TypeScript Code
 interface User {
   id: string;
   name: string;
@@ -738,7 +738,7 @@ class UserService {
 
 export const userService = new UserService();
 `,
-  python: `# DeepScientist - Example Python Code
+  python: `# Uniresearch - Example Python Code
 from typing import List, Optional, Dict
 from dataclasses import dataclass
 import asyncio
@@ -788,7 +788,7 @@ if __name__ == "__main__":
     processor = DocumentProcessor()
     print(f"Processing: {doc.title}")
 `,
-  go: `// DeepScientist - Example Go Code
+  go: `// Uniresearch - Example Go Code
 package main
 
 import (
@@ -843,7 +843,7 @@ func main() {
 	http.ListenAndServe(":8080", nil)
 }
 `,
-  rust: `// DeepScientist - Example Rust Code
+  rust: `// Uniresearch - Example Rust Code
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
@@ -908,8 +908,8 @@ fn main() {
   json: `{
   "name": "@ds/plugin-code-viewer",
   "version": "1.0.0",
-  "description": "Code viewer plugin for DeepScientist",
-  "author": "DeepScientist Team",
+  "description": "Code viewer plugin for Uniresearch",
+  "author": "Uniresearch Team",
   "license": "MIT",
   "keywords": ["code", "viewer", "syntax", "highlight"],
   "main": "dist/index.js",

@@ -121,13 +121,13 @@ export function McpMemoryToolView({ toolContent }: ToolViewProps) {
 
   const active = toolContent.status === 'calling'
   const titleMap: Record<string, string> = {
-    write: active ? 'DeepScientist is saving memory...' : 'DeepScientist saved memory.',
-    read: active ? 'DeepScientist is reading memory...' : 'DeepScientist loaded memory.',
-    search: active ? 'DeepScientist is searching memory...' : 'DeepScientist searched memory.',
-    list_recent: active ? 'DeepScientist is loading recent memory...' : 'DeepScientist loaded recent memory.',
-    promote_to_global: active ? 'DeepScientist is promoting memory...' : 'DeepScientist promoted memory.',
+    write: active ? 'Uniresearch is saving memory...' : 'Uniresearch saved memory.',
+    read: active ? 'Uniresearch is reading memory...' : 'Uniresearch loaded memory.',
+    search: active ? 'Uniresearch is searching memory...' : 'Uniresearch searched memory.',
+    list_recent: active ? 'Uniresearch is loading recent memory...' : 'Uniresearch loaded recent memory.',
+    promote_to_global: active ? 'Uniresearch is promoting memory...' : 'Uniresearch promoted memory.',
   }
-  const title = titleMap[tool ?? ''] || (active ? 'DeepScientist is updating memory...' : 'DeepScientist updated memory.')
+  const title = titleMap[tool ?? ''] || (active ? 'Uniresearch is updating memory...' : 'Uniresearch updated memory.')
 
   const resultCard = asRecord(resultValue)
   const memoryCard = asRecord(resultCard?.record) ?? resultCard

@@ -940,26 +940,26 @@ function ToolUseDefault({
   ) : null
 
   const mcpLabel = isMcpReadFile
-    ? `DeepScientist is reading ${mcpTitle}...`
+    ? `Uniresearch is reading ${mcpTitle}...`
     : isMcpAppendFile
-      ? `DeepScientist is writing ${mcpTitle}`
+      ? `Uniresearch is writing ${mcpTitle}`
       : isMcpPullFile
-        ? `DeepScientist is pulling ${mcpTitle}...`
+        ? `Uniresearch is pulling ${mcpTitle}...`
         : isMcpListFile || isMcpListDir
-          ? `DeepScientist is listing ${mcpTitle}...`
+          ? `Uniresearch is listing ${mcpTitle}...`
           : isMcpGrepText
-          ? `DeepScientist is grepping for "${mcpSearchQuery || '...'}"...`
+          ? `Uniresearch is grepping for "${mcpSearchQuery || '...'}"...`
           : isMcpGrepFiles
-            ? `DeepScientist is finding files for "${mcpSearchPattern || '...'}"...`
+            ? `Uniresearch is finding files for "${mcpSearchPattern || '...'}"...`
             : isMcpGlobFiles
-        ? `DeepScientist is matching files for "${mcpSearchPattern || '...'}"...`
+        ? `Uniresearch is matching files for "${mcpSearchPattern || '...'}"...`
         : isMcpWriteMemory
-          ? `DeepScientist is saving memory "${mcpMemoryTitle || 'Untitled'}"...`
+          ? `Uniresearch is saving memory "${mcpMemoryTitle || 'Untitled'}"...`
           : isMcpRequestPatch
-              ? `DeepScientist is applying a patch to ${mcpPatchTarget}...`
+              ? `Uniresearch is applying a patch to ${mcpPatchTarget}...`
               : isMcpBashExec
-                ? 'DeepScientist is executing a bash command...'
-                : 'DeepScientist is planning...'
+                ? 'Uniresearch is executing a bash command...'
+                : 'Uniresearch is planning...'
   const mcpSecondaryLine = isMcpAppendFile ? mcpReason : isMcpBashExec ? mcpBashCommand : ''
   const mcpStatusLineElement = (
     <div
